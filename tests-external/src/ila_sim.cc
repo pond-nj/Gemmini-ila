@@ -4,6 +4,7 @@
 
 #include <ilang/ila/ast/expr.h>
 
+#include <sstream>
 #include <stdexcept>
 #include <unordered_map>
 
@@ -12,6 +13,14 @@ using namespace gemmini;
 namespace {
 
 const int kMaxSteps = 1 << 20;
+
+using Cells = std::map<uint64_t, std::vector<int64_t>>;
+
+std::string Hex(uint64_t v) {
+  std::ostringstream s;
+  s << "0x" << std::hex << v;
+  return s.str();
+}
 
 bool IsStep(const std::string& name) {
   return name.size() > 5 && name.compare(name.size() - 5, 5, "_step") == 0;
@@ -66,6 +75,7 @@ struct IlaSim::Impl {
     z3::expr_vector updates;
   };
 
+  Geometry shape;
   z3::context ctx;
   Gemmini gem;
   Z3Translator z3_of;
@@ -78,8 +88,8 @@ struct IlaSim::Impl {
   bool dram_dirty = false;
   std::vector<Instr> instrs;
 
-  explicit Impl(size_t dim)
-      : gem(cfg(dim, dim, 1, 1, 4, 64 * 1024, 128 * 1024, DataType::INT8, DataType::INT16, DataType::INT32),
+  explicit Impl(Geometry shape_)
+      : shape(shape_), gem(cfg(shape.dim, shape.dim, 1, 1, 4, 64 * 1024, 128 * 1024, DataType::INT8, DataType::INT16, DataType::INT32),
             "gemmini"),
         z3_of(ctx), vars(ctx) {
     gem.AddInstructions();
@@ -193,7 +203,7 @@ struct IlaSim::Impl {
   }
 };
 
-IlaSim::IlaSim(size_t dim) : impl_(std::make_unique<Impl>(dim)) {}
+IlaSim::IlaSim(Geometry shape) : impl_(std::make_unique<Impl>(shape)) {}
 IlaSim::~IlaSim() = default;
 
 std::vector<std::string> IlaSim::Exec(unsigned funct, uint64_t rs1, uint64_t rs2) {
@@ -229,6 +239,17 @@ void IlaSim::WriteDram(uint64_t addr, uint8_t byte) {
   d.dram_dirty = true;
 }
 
-IlaSim::Cells IlaSim::Dram() const { return impl_->Read(impl_->gem.DRAM, DRAM_DATA_WIDTH, false); }
-IlaSim::Cells IlaSim::Scratchpad() const { return impl_->Read(impl_->gem.scratchpad, INPUT_TYPE_BIT_WIDTH, true); }
-IlaSim::Cells IlaSim::Accumulator() const { return impl_->Read(impl_->gem.accumulator, ACC_TYPE_BIT_WIDTH, true); }
+ArchState IlaSim::State() const {
+  const auto& d = *impl_;
+  ArchState s;
+  for (const auto& [addr, cell] : d.Read(d.gem.DRAM, DRAM_DATA_WIDTH, false)) s.dram[addr] = cell[0];
+  for (const auto& [idx, row] : d.Read(d.gem.scratchpad, INPUT_TYPE_BIT_WIDTH, true)) {
+    if (idx < d.shape.sp_rows) s.spad[idx] = row;
+    else s.stray.push_back("wrote scratchpad index " + Hex(idx) + ", past the last row");
+  }
+  for (const auto& [idx, row] : d.Read(d.gem.accumulator, ACC_TYPE_BIT_WIDTH, true)) {
+    if (idx >> 29 == 4 && (idx & 0x1FFFFFFF) < d.shape.acc_rows) s.acc[idx & 0x1FFFFFFF] = row;
+    else s.stray.push_back("wrote accumulator index " + Hex(idx) + ", not an accumulator row address");
+  }
+  return s;
+}

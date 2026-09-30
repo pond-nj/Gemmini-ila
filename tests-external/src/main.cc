@@ -8,19 +8,18 @@
 //   .mem <addr> <hex bytes>            CPU writes these bytes to DRAM, starting at addr
 //   # ... / // ...                     comment
 //
-// How ILA state is matched to libgemmini state:
-//   DRAM         ILA cell a (32 bits) holds the byte at address a, zero-extended.
-//   scratchpad   ILA row index r is scratchpad row r.
-//   accumulator  ILA row index 0x80000000 | r is accumulator row r (the local address
-//                with bit 31 set, as the ILA stores it). Any other index is a stray write.
+// Both models report their state as ArchState (gemmini_model.h); ila_sim.h says how ILA
+// state maps to it.
 //
 // Exit status: 0 all match, 1 first mismatch reported, 2 bad trace or libgemmini rejected it.
 
 #include "golden.h"
 #include "ila_sim.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <sstream>
 
 namespace {
@@ -53,50 +52,42 @@ std::string Hex(uint64_t v) {
   return s.str();
 }
 
-// Adds one line per differing element of `what` row/cell `idx`.
+// Adds one line per differing element of `what` row/cell `idx`. Missing elements are 0.
 void DiffRow(std::vector<std::string>& diffs, const std::string& what, uint64_t idx,
              const std::vector<int64_t>& ref, const std::vector<int64_t>& ila) {
-  for (size_t c = 0; c < ref.size(); c++) {
+  size_t width = std::max(ref.size(), ila.size());
+  for (size_t c = 0; c < width; c++) {
+    auto want = c < ref.size() ? ref[c] : 0;
     auto got = c < ila.size() ? ila[c] : 0;
-    if (ref[c] != got)
-      diffs.push_back(what + " " + Hex(idx) + (ref.size() > 1 ? " col " + std::to_string(c) : "") +
-                      ": libgemmini " + std::to_string(ref[c]) + ", ILA " + std::to_string(got));
+    if (want != got)
+      diffs.push_back(what + " " + Hex(idx) + (width > 1 ? " col " + std::to_string(c) : "") +
+                      ": libgemmini " + std::to_string(want) + ", ILA " + std::to_string(got));
   }
 }
 
-std::vector<std::string> Compare(const Golden& ref, const IlaSim& ila) {
+std::vector<int64_t> Elems(int64_t v) { return {v}; }
+const std::vector<int64_t>& Elems(const std::vector<int64_t>& row) { return row; }
+
+// Diffs every index either model holds. A missing index is all 0.
+template <typename Map>
+void DiffAll(std::vector<std::string>& diffs, const std::string& what, const Map& ref, const Map& ila) {
+  std::set<uint64_t> idxs;
+  for (const auto& kv : ref) idxs.insert(kv.first);
+  for (const auto& kv : ila) idxs.insert(kv.first);
+  for (auto idx : idxs) {
+    auto r = ref.find(idx), i = ila.find(idx);
+    DiffRow(diffs, what, idx, r == ref.end() ? std::vector<int64_t>{} : Elems(r->second),
+            i == ila.end() ? std::vector<int64_t>{} : Elems(i->second));
+  }
+}
+
+std::vector<std::string> Compare(const ArchState& ref, const ArchState& ila) {
   std::vector<std::string> diffs;
-  const size_t dim = ref.Dim();
-
-  auto ref_dram = ref.Dram();
-  auto dram = ila.Dram();
-  for (const auto& [addr, byte] : ref_dram) dram[addr];
-  for (const auto& [addr, cell] : dram) {
-    auto it = ref_dram.find(addr);
-    DiffRow(diffs, "DRAM", addr, {it == ref_dram.end() ? 0 : it->second}, cell);
-  }
-
-  auto sp = ila.Scratchpad();
-  for (const auto& [idx, row] : sp)
-    if (idx >= ref.SpRows()) diffs.push_back("ILA wrote scratchpad index " + Hex(idx) + ", past the last row");
-  for (size_t r = 0; r < ref.SpRows(); r++) {
-    std::vector<int64_t> want(dim);
-    for (size_t c = 0; c < dim; c++) want[c] = ref.Sp(r, c);
-    auto it = sp.find(r);
-    DiffRow(diffs, "scratchpad row", r, want, it == sp.end() ? std::vector<int64_t>(dim) : it->second);
-  }
-
-  std::map<uint64_t, std::vector<int64_t>> acc;
-  for (const auto& [idx, row] : ila.Accumulator()) {
-    if (idx >> 29 == 4 && (idx & 0x1FFFFFFF) < ref.AccRows()) acc[idx & 0x1FFFFFFF] = row;
-    else diffs.push_back("ILA wrote accumulator index " + Hex(idx) + ", not an accumulator row address");
-  }
-  for (size_t r = 0; r < ref.AccRows(); r++) {
-    std::vector<int64_t> want(dim);
-    for (size_t c = 0; c < dim; c++) want[c] = ref.Acc(r, c);
-    auto it = acc.find(r);
-    DiffRow(diffs, "accumulator row", r, want, it == acc.end() ? std::vector<int64_t>(dim) : it->second);
-  }
+  for (const auto& s : ref.stray) diffs.push_back("libgemmini " + s);
+  for (const auto& s : ila.stray) diffs.push_back("ILA " + s);
+  DiffAll(diffs, "DRAM", ref.dram, ila.dram);
+  DiffAll(diffs, "scratchpad row", ref.spad, ila.spad);
+  DiffAll(diffs, "accumulator row", ref.acc, ila.acc);
   return diffs;
 }
 
@@ -130,7 +121,7 @@ int main(int argc, char** argv) {
   }
 
   Golden ref(log);
-  IlaSim ila(ref.Dim());
+  IlaSim ila(ref.Shape());
   int line_no = 0, count = 0;
   for (std::string line; std::getline(in, line);) {
     line_no++;
@@ -165,7 +156,7 @@ int main(int argc, char** argv) {
     std::vector<std::string> ran, diffs;
     try {
       ran = ila.Exec(insn.funct, insn.rs1, insn.rs2);
-      diffs = Compare(ref, ila);
+      diffs = Compare(ref.State(), ila.State());
     } catch (const std::exception& e) {
       diffs.push_back(e.what());
     }
@@ -179,6 +170,6 @@ int main(int argc, char** argv) {
     if (diffs.size() > kMaxShown) std::cout << "  ... and " << diffs.size() - kMaxShown << " more\n";
     return 1;
   }
-  std::cout << "PASS " << path << " (" << count << " instructions, DIM " << ref.Dim() << ")\n";
+  std::cout << "PASS " << path << " (" << count << " instructions, DIM " << ref.Shape().dim << ")\n";
   return 0;
 }

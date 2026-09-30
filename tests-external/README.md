@@ -8,6 +8,7 @@ instruction, and the run stops at the first difference.
 | Path | What it is |
 | --- | --- |
 | `src/main.cc` | `gemmini_diff`: replays a trace on both models and compares them |
+| `src/gemmini_model.h` | the interface both models implement, and the state they report |
 | `src/golden.*` | libgemmini on a Spike processor and MMU, over sparse DRAM |
 | `src/ila_sim.*` | runs the ILA on concrete values (start instruction, then its `*_step`s) |
 | `hosttrace/` | turns a `gemmini-rocc-tests` program into a trace, on the host |

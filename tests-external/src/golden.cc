@@ -82,7 +82,7 @@ Golden::Golden(bool log) : impl_(std::make_unique<Impl>()) {
 
 Golden::~Golden() = default;
 
-void Golden::Exec(unsigned funct, uint64_t rs1, uint64_t rs2) {
+std::vector<std::string> Golden::Exec(unsigned funct, uint64_t rs1, uint64_t rs2) {
   rocc_insn_t insn{};
   insn.funct = funct;
   insn.xs1 = insn.xs2 = 1;
@@ -91,13 +91,38 @@ void Golden::Exec(unsigned funct, uint64_t rs1, uint64_t rs2) {
   } catch (trap_t& t) {
     throw std::runtime_error("libgemmini: " + t.name());
   }
+  return {};
 }
 
 void Golden::WriteDram(uint64_t addr, uint8_t byte) { *impl_->dram.addr_to_mem(addr) = byte; }
 
-std::map<uint64_t, uint8_t> Golden::Dram() const { return impl_->dram.NonzeroBytes(); }
-size_t Golden::Dim() const { return DIM; }
-size_t Golden::SpRows() const { return impl_->gem.gemmini_state.spad.size(); }
-size_t Golden::AccRows() const { return impl_->gem.gemmini_state.accumulator.size(); }
-int64_t Golden::Sp(size_t row, size_t col) const { return impl_->gem.gemmini_state.spad[row][col]; }
-int64_t Golden::Acc(size_t row, size_t col) const { return impl_->gem.gemmini_state.accumulator[row][col]; }
+namespace {
+
+// Keeps the nonzero rows of `rows`.
+template <typename Rows>
+std::map<uint64_t, std::vector<int64_t>> NonzeroRows(const Rows& rows) {
+  std::map<uint64_t, std::vector<int64_t>> out;
+  for (size_t r = 0; r < rows.size(); r++)
+    for (auto v : rows[r])
+      if (v) {
+        out[r].assign(rows[r].begin(), rows[r].end());
+        break;
+      }
+  return out;
+}
+
+} // namespace
+
+ArchState Golden::State() const {
+  const auto& gs = impl_->gem.gemmini_state;
+  ArchState s;
+  for (const auto& [addr, byte] : impl_->dram.NonzeroBytes()) s.dram[addr] = byte;
+  s.spad = NonzeroRows(gs.spad);
+  s.acc = NonzeroRows(gs.accumulator);
+  return s;
+}
+
+Geometry Golden::Shape() const {
+  const auto& gs = impl_->gem.gemmini_state;
+  return {DIM, gs.spad.size(), gs.accumulator.size()};
+}

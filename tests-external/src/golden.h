@@ -1,28 +1,22 @@
 #pragma once
 
-#include <cstdint>
-#include <map>
+#include "gemmini_model.h"
+
 #include <memory>
 
 // The reference model: libgemmini, Gemmini's Spike functional model, on a Spike processor
 // and MMU over sparse DRAM.
 // Each Exec is one official instruction, applied atomically.
-class Golden {
+class Golden : public GemminiModel {
 public:
   explicit Golden(bool log);
-  ~Golden();
+  ~Golden() override;
 
-  // Throws std::runtime_error if libgemmini rejects the instruction.
-  void Exec(unsigned funct, uint64_t rs1, uint64_t rs2);
-  void WriteDram(uint64_t addr, uint8_t byte);
-
-  // Bytes never written, or written as 0, are left out.
-  std::map<uint64_t, uint8_t> Dram() const;
-  size_t Dim() const;
-  size_t SpRows() const;
-  size_t AccRows() const;
-  int64_t Sp(size_t row, size_t col) const;
-  int64_t Acc(size_t row, size_t col) const;
+  // Throws std::runtime_error if libgemmini rejects the instruction. Returns no steps.
+  std::vector<std::string> Exec(unsigned funct, uint64_t rs1, uint64_t rs2) override;
+  void WriteDram(uint64_t addr, uint8_t byte) override;
+  ArchState State() const override;
+  Geometry Shape() const;
 
 private:
   struct Impl;
