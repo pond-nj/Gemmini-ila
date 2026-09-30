@@ -68,11 +68,12 @@ std::vector<std::string> Compare(const Golden& ref, const IlaSim& ila) {
   std::vector<std::string> diffs;
   const size_t dim = ref.Dim();
 
+  auto ref_dram = ref.Dram();
   auto dram = ila.Dram();
-  for (const auto& [addr, byte] : ref.Dram()) dram[addr];
+  for (const auto& [addr, byte] : ref_dram) dram[addr];
   for (const auto& [addr, cell] : dram) {
-    auto it = ref.Dram().find(addr);
-    DiffRow(diffs, "DRAM", addr, {it == ref.Dram().end() ? 0 : it->second}, cell);
+    auto it = ref_dram.find(addr);
+    DiffRow(diffs, "DRAM", addr, {it == ref_dram.end() ? 0 : it->second}, cell);
   }
 
   auto sp = ila.Scratchpad();

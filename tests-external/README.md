@@ -8,17 +8,17 @@ instruction, and the run stops at the first difference.
 | Path | What it is |
 | --- | --- |
 | `src/main.cc` | `gemmini_diff`: replays a trace on both models and compares them |
-| `src/golden.*` | libgemmini, run without Spike |
-| `spike/riscv/` | the few Spike headers libgemmini needs, stubbed |
+| `src/golden.*` | libgemmini on a Spike processor and MMU, over sparse DRAM |
 | `src/ila_sim.*` | runs the ILA on concrete values (start instruction, then its `*_step`s) |
 | `hosttrace/` | turns a `gemmini-rocc-tests` program into a trace, on the host |
 | `gen_random.py` | writes constrained-random traces |
 | `run.sh` | runs both kinds and prints PASS/FAIL per program |
-| `dependencies/` | submodules: `gemmini-rocc-tests`, `libgemmini` |
+| `dependencies/` | submodules: `gemmini-rocc-tests`, `libgemmini`, `riscv-isa-sim` (Spike) |
 
 ## Build
 
-Needs an installed ILAng (`ilangConfig.cmake`) and Z3.
+Needs an installed ILAng (`ilangConfig.cmake`), Z3, and `dtc` (device-tree-compiler, required by
+Spike's configure). Spike is built from the submodule into `<build>/spike` on the first build.
 
 ```sh
 git submodule update --init --recursive tests-external/dependencies

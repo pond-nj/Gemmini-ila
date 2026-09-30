@@ -4,7 +4,8 @@
 #include <map>
 #include <memory>
 
-// The reference model: libgemmini, Gemmini's Spike functional model, run without Spike.
+// The reference model: libgemmini, Gemmini's Spike functional model, on a Spike processor
+// and MMU over sparse DRAM.
 // Each Exec is one official instruction, applied atomically.
 class Golden {
 public:
@@ -15,7 +16,8 @@ public:
   void Exec(unsigned funct, uint64_t rs1, uint64_t rs2);
   void WriteDram(uint64_t addr, uint8_t byte);
 
-  const std::map<uint64_t, uint8_t>& Dram() const;
+  // Bytes never written, or written as 0, are left out.
+  std::map<uint64_t, uint8_t> Dram() const;
   size_t Dim() const;
   size_t SpRows() const;
   size_t AccRows() const;
