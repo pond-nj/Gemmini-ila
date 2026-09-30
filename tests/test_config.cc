@@ -38,7 +38,7 @@ void test_config_ex(Gemmini& gem)
         EXPECT_TRUE(dataflow == "true");
         
         auto activation = TO_STR(gem.activation_func, 1, u, mdl);
-        EXPECT_TRUE(activation == "#b0");
+        EXPECT_TRUE(activation == "#b00");
         
         auto A_T = TO_STR(gem.A_T, 1, u, mdl);
         EXPECT_TRUE(A_T == "#b0");
@@ -82,19 +82,16 @@ void test_config_mvin(Gemmini& gem)
 
         [&](z3::model& mdl, ilang::IlaZ3Unroller& u) {
             // Verify config_mvin state updates at step 1
-            auto acc_type = TO_STR(gem.acc_type, 1, u, mdl);
+            auto acc_type = TO_STR(gem.acc_type[0], 1, u, mdl);
             EXPECT_TRUE(acc_type == "#b1");
 
-            auto mvin_type = TO_STR(gem.mvin_type, 1, u, mdl);
-            EXPECT_TRUE(mvin_type == "#b00");
-
-            auto private_stride = TO_STR(gem.private_stride, 1, u, mdl);
+            auto private_stride = TO_STR(gem.private_stride[0], 1, u, mdl);
             EXPECT_TRUE(private_stride == "#x0020");
 
-            auto mem_stride_mvin = TO_STR(gem.memory_stride_mvin, 1, u, mdl);
+            auto mem_stride_mvin = TO_STR(gem.memory_stride_mvin[0], 1, u, mdl);
             EXPECT_TRUE(mem_stride_mvin == "#x0000000000000040");
 
-            auto scale = TO_STR(gem.scale, 1, u, mdl);
+            auto scale = TO_STR(gem.scale[0], 1, u, mdl);
             EXPECT_TRUE(scale == "#x3f800000");
         });
 }
