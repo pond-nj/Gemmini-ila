@@ -1,5 +1,6 @@
 #include "golden.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <iostream>
 #include <stdexcept>
@@ -23,6 +24,28 @@
 
 namespace {
 
+// libgemmini's reset banner must not appear in differential-test results.
+class ScopedStdoutSilencer {
+public:
+  ScopedStdoutSilencer() {
+    std::fflush(stdout);
+    saved_stdout_ = dup(STDOUT_FILENO);
+    freopen("/dev/null", "w", stdout);
+  }
+
+  ~ScopedStdoutSilencer() {
+    std::fflush(stdout);
+    dup2(saved_stdout_, STDOUT_FILENO);
+    close(saved_stdout_);
+  }
+
+  ScopedStdoutSilencer(const ScopedStdoutSilencer&) = delete;
+  ScopedStdoutSilencer& operator=(const ScopedStdoutSilencer&) = delete;
+
+private:
+  int saved_stdout_;
+};
+
 // Spike's view of DRAM: sparse pages, zero-filled on first touch, so any address is memory.
 class SparseDram : public simif_t {
 public:
@@ -44,9 +67,9 @@ public:
 
   std::map<uint64_t, uint8_t> NonzeroBytes() const {
     std::map<uint64_t, uint8_t> bytes;
-    for (const auto& [page, data] : pages_)
-      for (reg_t i = 0; i < kPageSize; i++)
-        if (data[i]) bytes[page * kPageSize + i] = data[i];
+    for (const auto& [page_index, page_bytes] : pages_)
+      for (reg_t offset = 0; offset < kPageSize; offset++)
+        if (page_bytes[offset]) bytes[page_index * kPageSize + offset] = page_bytes[offset];
     return bytes;
   }
 
@@ -70,14 +93,8 @@ Golden::Golden(bool log) : impl_(std::make_unique<Impl>()) {
   if (log) impl_->proc.enable_log_commits();
   impl_->gem.set_processor(&impl_->proc);
 
-  // reset() prints a banner on stdout; keep stdout for results.
-  std::fflush(stdout);
-  int saved = dup(STDOUT_FILENO);
-  freopen("/dev/null", "w", stdout);
+  ScopedStdoutSilencer silence_banner;
   impl_->gem.reset();
-  std::fflush(stdout);
-  dup2(saved, STDOUT_FILENO);
-  close(saved);
 }
 
 Golden::~Golden() = default;
@@ -98,31 +115,30 @@ void Golden::WriteDram(uint64_t addr, uint8_t byte) { *impl_->dram.addr_to_mem(a
 
 namespace {
 
-// Keeps the nonzero rows of `rows`.
-template <typename Rows>
-std::map<uint64_t, std::vector<int64_t>> NonzeroRows(const Rows& rows) {
-  std::map<uint64_t, std::vector<int64_t>> out;
-  for (size_t r = 0; r < rows.size(); r++)
-    for (auto v : rows[r])
-      if (v) {
-        out[r].assign(rows[r].begin(), rows[r].end());
-        break;
-      }
-  return out;
+template <typename Table>
+Rows NonzeroRows(const Table& rows) {
+  Rows nonzero_rows;
+  for (size_t index = 0; index < rows.size(); index++) {
+    const auto& row = rows[index];
+    if (std::any_of(row.begin(), row.end(), [](auto value) { return value != 0; })) {
+      nonzero_rows[index].assign(row.begin(), row.end());
+    }
+  }
+  return nonzero_rows;
 }
 
 } // namespace
 
 ArchState Golden::State() const {
-  const auto& gs = impl_->gem.gemmini_state;
-  ArchState s;
-  for (const auto& [addr, byte] : impl_->dram.NonzeroBytes()) s.dram[addr] = byte;
-  s.spad = NonzeroRows(gs.spad);
-  s.acc = NonzeroRows(gs.accumulator);
-  return s;
+  const auto& gemmini_state = impl_->gem.gemmini_state;
+  ArchState state;
+  for (const auto& [address, byte] : impl_->dram.NonzeroBytes()) state.dram[address] = {byte};
+  state.spad = NonzeroRows(gemmini_state.spad);
+  state.acc = NonzeroRows(gemmini_state.accumulator);
+  return state;
 }
 
 Geometry Golden::Shape() const {
-  const auto& gs = impl_->gem.gemmini_state;
-  return {DIM, gs.spad.size(), gs.accumulator.size()};
+  const auto& gemmini_state = impl_->gem.gemmini_state;
+  return {DIM, gemmini_state.spad.size(), gemmini_state.accumulator.size()};
 }

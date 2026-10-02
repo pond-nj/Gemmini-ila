@@ -41,8 +41,7 @@ class Gen:
         self.dim = dim
         self.r = random.Random(seed)
         self.lines = []
-        self.in_size = 64 * dim * dim
-        self.out_size = 64 * dim * dim
+        self.region_size = 64 * dim * dim  # bytes at IN_BASE and at OUT_BASE
         self.mvin_stride = [dim] * 3
         self.shrunk = [0] * 3
 
@@ -66,7 +65,7 @@ class Gen:
         return self.r.randrange(0, 4 * self.dim)
 
     def fill_input(self):
-        for off in range(0, self.in_size, 64):
+        for off in range(0, self.region_size, 64):
             data = bytes(self.r.randrange(256) for _ in range(64))
             self.lines.append(f".mem 0x{IN_BASE + off:x} {data.hex()}")
 
@@ -107,8 +106,17 @@ class Gen:
             local, cols = self.sp_row(), self.pick((3, self.size()), (1, 2 * self.dim))
             elem = 1
         span = (rows - 1) * self.mvin_stride[pid] + cols * elem
-        dram = 0 if self.r.random() < 0.1 else IN_BASE + self.r.randrange(self.in_size - span)
+        dram = 0 if self.r.random() < 0.1 else IN_BASE + self.r.randrange(self.region_size - span)
         self.emit(name, dram, operand(local, rows, cols))
+
+    def mvin2(self):
+        self.mvin("mvin2")
+
+    def mvin3(self):
+        self.mvin("mvin3")
+
+    def flush(self):
+        self.emit("flush", 0, 0)
 
     def mvout(self):
         rows, cols = self.size(), self.size()
@@ -116,7 +124,7 @@ class Gen:
             local = ACC | self.acc_row() | (FULL if self.r.random() < 0.3 else 0)
         else:
             local = self.sp_row()
-        dram = OUT_BASE + self.r.randrange(self.out_size // 2)
+        dram = OUT_BASE + self.r.randrange(self.region_size // 2)
         self.emit("mvout", dram, operand(local, rows, cols))
 
     def output(self):
@@ -145,13 +153,7 @@ class Gen:
             self.config_mvin(pid)
         self.config_mvout()
         for _ in range(length):
-            op = self.r.choice(ops)
-            if op in ("mvin", "mvin2", "mvin3"):
-                self.mvin(op)
-            elif op == "flush":
-                self.emit("flush", 0, 0)
-            else:
-                getattr(self, op)()
+            getattr(self, self.r.choice(ops))()
         return "\n".join(self.lines) + "\n"
 
 

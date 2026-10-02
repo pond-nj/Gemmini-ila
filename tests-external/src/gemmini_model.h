@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -9,13 +10,22 @@ struct Geometry {
   size_t dim, sp_rows, acc_rows;
 };
 
+// Index (address or row) -> its elements.
+using Rows = std::map<uint64_t, std::vector<int64_t>>;
+
 // Architectural state, in the same terms for every model. Anything left out is 0.
 struct ArchState {
-  std::map<uint64_t, int64_t> dram;                  // byte address -> byte
-  std::map<uint64_t, std::vector<int64_t>> spad;     // row -> DIM elements
-  std::map<uint64_t, std::vector<int64_t>> acc;      // row -> DIM elements
-  std::vector<std::string> stray;                    // writes to no architectural location
+  Rows dram;                      // byte address -> {byte}
+  Rows spad;                      // row -> DIM elements
+  Rows acc;                       // row -> DIM elements
+  std::vector<std::string> stray; // writes to no architectural location
 };
+
+inline std::string Hex(uint64_t v) {
+  std::ostringstream s;
+  s << "0x" << std::hex << v;
+  return s.str();
+}
 
 // A Gemmini model that runs official instructions on DRAM the CPU wrote.
 class GemminiModel {
