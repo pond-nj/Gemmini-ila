@@ -39,3 +39,5 @@ ILAng/
 
 build-debug/
 !tests-external/cmake/*.cmake
+
+tests-external/logs/

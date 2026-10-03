@@ -16,7 +16,6 @@ constexpr int kMaxSteps = 1 << 20;
 constexpr uint64_t kAccumulatorAddressTag = uint64_t{1} << 31;
 constexpr uint64_t kAccumulatorRowMask = (uint64_t{1} << 29) - 1;
 
-enum class InstructionKind { Start, Step };
 enum class Signedness { Unsigned, Signed };
 
 cfg CreateConfig(size_t dimension) {
@@ -105,7 +104,7 @@ private:
 struct IlaSim::Impl {
   // An ILA instruction with its decode and updates translated to z3 once.
   struct TranslatedInstruction {
-    InstrRef ila;
+    std::string name;
     z3::expr decode;
     std::vector<size_t> updated_state_indices; // state indices this instruction updates
     z3::expr_vector updates;
@@ -120,7 +119,7 @@ struct IlaSim::Impl {
   std::vector<z3::expr> variable_values; // current value of each var
   size_t funct_input, rs1_input, rs2_input;
   size_t dram_state, scratchpad_state, accumulator_state;
-  std::vector<TranslatedInstruction> instructions;
+  std::vector<TranslatedInstruction> start_instructions, step_instructions;
 
   explicit Impl(Geometry shape_)
       : shape(shape_), gemmini_model(CreateConfig(shape.dim), "gemmini"),
@@ -162,14 +161,15 @@ struct IlaSim::Impl {
     for (size_t i = 0; i < model.instr_num(); i++) {
       auto instruction = model.instr(i);
       TranslatedInstruction translated{
-          instruction, translate_expression(instruction.GetDecode()), {}, z3::expr_vector(context)};
+          instruction.name(), translate_expression(instruction.GetDecode()), {}, z3::expr_vector(context)};
       for (size_t state_index = 0; state_index < states.size(); state_index++) {
         auto update = instruction.GetUpdate(states[state_index]);
         if (update.get().get() == nullptr) continue;
         translated.updated_state_indices.push_back(state_index);
         translated.updates.push_back(translate_expression(update));
       }
-      instructions.push_back(translated);
+      auto& group = IsStepInstruction(instruction.name()) ? step_instructions : start_instructions;
+      group.push_back(translated);
     }
   }
 
@@ -226,26 +226,17 @@ struct IlaSim::Impl {
       if (variable_symbols[state_index].is_array()) CompactArray(state_index);
   }
 
-  std::vector<const TranslatedInstruction*> CandidateInstructions(InstructionKind kind) const {
-    std::vector<const TranslatedInstruction*> candidates;
-    for (const auto& instruction : instructions) {
-      bool is_step = IsStepInstruction(instruction.ila.name());
-      if (is_step == (kind == InstructionKind::Step)) candidates.push_back(&instruction);
-    }
-    return candidates;
-  }
-
-  std::vector<const TranslatedInstruction*> DecodeInstructions(InstructionKind kind) {
-    auto candidates = CandidateInstructions(kind);
+  std::vector<const TranslatedInstruction*> DecodeInstructions(
+      const std::vector<TranslatedInstruction>& candidates) {
     z3::expr_vector decodes(context);
-    for (auto instruction : candidates) decodes.push_back(instruction->decode);
+    for (const auto& instruction : candidates) decodes.push_back(instruction.decode);
     auto decode_results = Evaluate(decodes);
     std::vector<const TranslatedInstruction*> decoded;
     for (size_t i = 0; i < candidates.size(); i++)
-      if (decode_results[i].is_true()) decoded.push_back(candidates[i]);
+      if (decode_results[i].is_true()) decoded.push_back(&candidates[i]);
     if (decoded.size() > 1) {
       std::string names;
-      for (auto instruction : decoded) names += " " + instruction->ila.name();
+      for (auto instruction : decoded) names += " " + instruction->name;
       throw std::runtime_error("ILA: ambiguous decode:" + names);
     }
     return decoded;
@@ -278,18 +269,18 @@ std::vector<std::string> IlaSim::Exec(unsigned funct, uint64_t rs1, uint64_t rs2
   simulator.variable_values[simulator.rs1_input] = simulator.context.bv_val(rs1, RS_WIDTH);
   simulator.variable_values[simulator.rs2_input] = simulator.context.bv_val(rs2, RS_WIDTH);
 
-  auto start = simulator.DecodeInstructions(InstructionKind::Start);
+  auto start = simulator.DecodeInstructions(simulator.start_instructions);
   if (start.empty()) return executed_steps;
   simulator.ApplyUpdates(*start[0]);
-  executed_steps.push_back(start[0]->ila.name());
+  executed_steps.push_back(start[0]->name);
   for (int step_count = 0;; step_count++) {
-    auto step = simulator.DecodeInstructions(InstructionKind::Step);
+    auto step = simulator.DecodeInstructions(simulator.step_instructions);
     if (step.empty()) break;
     if (step_count == kMaxSteps)
-      throw std::runtime_error("ILA: " + step[0]->ila.name() + " still decodes after " +
+      throw std::runtime_error("ILA: " + step[0]->name + " still decodes after " +
                                std::to_string(step_count) + " steps");
     simulator.ApplyUpdates(*step[0]);
-    executed_steps.push_back(step[0]->ila.name());
+    executed_steps.push_back(step[0]->name);
   }
   return executed_steps;
 }

@@ -2,7 +2,10 @@
 // on the Gemmini ILA, and compares DRAM, scratchpad and accumulator after every
 // instruction.
 //
-//   gemmini_diff [--log] <trace>      (trace "-" reads stdin)
+//   gemmini_diff [--log] [--progress <file>] <trace>      (trace "-" reads stdin)
+//
+// --progress writes one line per instruction to <file>, written before the
+// instruction runs and finished after, so a slow instruction shows as in flight.
 //
 // Trace lines (hosttrace/trace.sh and gen_random.py both write this):
 //   <NAME> funct=<n> rs1=<v> rs2=<v>   one official Gemmini instruction; NAME
@@ -32,6 +35,7 @@ constexpr size_t kMaxShownDifferences = 20;
 struct Options {
   bool log = false;
   std::string trace_path;
+  std::string progress_path;
 };
 
 Options ParseOptions(int argc, char** argv) {
@@ -40,6 +44,8 @@ Options ParseOptions(int argc, char** argv) {
     std::string argument = argv[i];
     if (argument == "--log")
       options.log = true;
+    else if (argument == "--progress" && i + 1 < argc)
+      options.progress_path = argv[++i];
     else
       options.trace_path = argument;
   }
@@ -122,8 +128,6 @@ void DiffAll(std::vector<std::string>& diffs, const std::string& what,
 
 std::vector<std::string> Compare(const ArchState& ref, const ArchState& ila) {
   std::vector<std::string> diffs;
-  if (!ref.stray.empty())
-    throw std::logic_error("libgemmini reported a stray write: " + ref.stray.front());
   for (const auto& write : ila.stray) diffs.push_back("ILA " + write);
   DiffAll(diffs, "DRAM", ref.dram, ila.dram);
   DiffAll(diffs, "scratchpad row", ref.spad, ila.spad);
@@ -149,10 +153,14 @@ struct InstructionResult {
 InstructionResult ExecuteIlaAndCompare(const Insn& insn,
                                        GemminiModel& reference,
                                        GemminiModel& ila) {
+  auto reference_state = reference.State();
+  if (!reference_state.stray.empty())
+    throw std::logic_error("libgemmini reported a stray write: " +
+                           reference_state.stray.front());
   InstructionResult result;
   try {
     result.executed_steps = ila.Exec(insn.funct, insn.rs1, insn.rs2);
-    result.differences = Compare(reference.State(), ila.State());
+    result.differences = Compare(reference_state, ila.State());
   } catch (const std::exception& error) {
     result.differences.push_back(error.what());
   }
@@ -180,7 +188,8 @@ void ReportMismatch(const TracePosition& position, const std::string& line,
   }
 }
 
-int SimulateAndCompare(std::istream& input, const Options& options) {
+int SimulateAndCompare(std::istream& input, std::ostream& progress,
+                       const Options& options) {
   Golden reference(options.log);
   IlaSim ila(reference.Shape());
   TracePosition position{options.trace_path};
@@ -200,6 +209,10 @@ int SimulateAndCompare(std::istream& input, const Options& options) {
                 << ": cannot parse: " << line << "\n";
       return 2;
     }
+    position.instruction_count++;
+    progress << "instruction " << position.instruction_count << " (line "
+             << position.line_number << "): " << line.substr(first) << " -> "
+             << std::flush;
     try {
       reference.Exec(insn.funct, insn.rs1, insn.rs2);
     } catch (const std::exception& error) {
@@ -209,7 +222,7 @@ int SimulateAndCompare(std::istream& input, const Options& options) {
     }
 
     auto result = ExecuteIlaAndCompare(insn, reference, ila);
-    position.instruction_count++;
+    progress << "ILA ran " << Summary(result.executed_steps) << std::endl;
     if (result.differences.empty()) continue;
 
     ReportMismatch(position, line.substr(first), result);
@@ -225,7 +238,7 @@ int SimulateAndCompare(std::istream& input, const Options& options) {
 int main(int argc, char** argv) {
   auto options = ParseOptions(argc, argv);
   if (options.trace_path.empty()) {
-    std::cerr << "usage: gemmini_diff [--log] <trace>\n";
+    std::cerr << "usage: gemmini_diff [--log] [--progress <file>] <trace>\n";
     return 2;
   }
   std::ifstream file;
@@ -235,5 +248,14 @@ int main(int argc, char** argv) {
     std::cerr << "cannot open " << options.trace_path << "\n";
     return 2;
   }
-  return SimulateAndCompare(input, options);
+  // Left closed without --progress, so progress writes are dropped.
+  std::ofstream progress;
+  if (!options.progress_path.empty()) {
+    progress.open(options.progress_path);
+    if (!progress) {
+      std::cerr << "cannot write " << options.progress_path << "\n";
+      return 2;
+    }
+  }
+  return SimulateAndCompare(input, progress, options);
 }
