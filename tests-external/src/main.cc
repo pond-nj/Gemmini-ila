@@ -20,6 +20,7 @@
 #include <iostream>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 
 #include "golden.h"
 #include "ila_sim.h"
@@ -121,7 +122,8 @@ void DiffAll(std::vector<std::string>& diffs, const std::string& what,
 
 std::vector<std::string> Compare(const ArchState& ref, const ArchState& ila) {
   std::vector<std::string> diffs;
-  for (const auto& write : ref.stray) diffs.push_back("libgemmini " + write);
+  if (!ref.stray.empty())
+    throw std::logic_error("libgemmini reported a stray write: " + ref.stray.front());
   for (const auto& write : ila.stray) diffs.push_back("ILA " + write);
   DiffAll(diffs, "DRAM", ref.dram, ila.dram);
   DiffAll(diffs, "scratchpad row", ref.spad, ila.spad);

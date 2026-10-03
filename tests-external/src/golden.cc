@@ -84,6 +84,8 @@ private:
 struct Golden::Impl {
   cfg_t cfg;
   SparseDram dram{cfg};
+  // libgemmini's DRAM accesses (mvin/mvout) go through proc's MMU, which resolves them via
+  // dram.addr_to_mem, so Gemmini's own stores land in dram without calling WriteDram.
   processor_t proc{cfg.isa, cfg.priv, &cfg, &dram, 0, false, stderr, std::cerr};
   gemmini_t gem;
 };

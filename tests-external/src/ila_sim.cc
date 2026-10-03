@@ -101,7 +101,7 @@ private:
 
 // Each state holds a concrete z3 value. A step substitutes the current values into the
 // instruction's update functions and lets z3's simplifier fold them to new values.
-// Memories are kept as a map of written cells and rebuilt as const-array + stores.
+// Memories are kept as const-array + stores, compacted after each update.
 struct IlaSim::Impl {
   // An ILA instruction with its decode and updates translated to z3 once.
   struct TranslatedInstruction {
@@ -119,9 +119,7 @@ struct IlaSim::Impl {
   z3::expr_vector variable_symbols;     // states, then inputs, at time 0
   std::vector<z3::expr> variable_values; // current value of each var
   size_t funct_input, rs1_input, rs2_input;
-  std::map<size_t, std::map<uint64_t, z3::expr>> memory_cells; // state index -> written cells
   size_t dram_state, scratchpad_state, accumulator_state;
-  bool dram_dirty = false;
   std::vector<TranslatedInstruction> instructions;
 
   explicit Impl(Geometry shape_)
@@ -134,13 +132,12 @@ struct IlaSim::Impl {
     TranslateInstructions(model);
   }
 
-  // Registers each state as a var with a zero value, and records the memories.
+  // Registers each state as a var with a zero value.
   void RegisterStates(Ila& model) {
     for (size_t i = 0; i < model.state_num(); i++) {
       states.push_back(model.state(i));
       variable_symbols.push_back(translate_expression(model.state(i)));
       variable_values.push_back(Zero(context, variable_symbols.back().get_sort()));
-      if (model.state(i).get()->is_mem()) memory_cells.try_emplace(i);
       auto name = model.state(i).name();
       if (name == gemmini_model.DRAM.name()) dram_state = i;
       if (name == gemmini_model.scratchpad.name()) scratchpad_state = i;
@@ -190,18 +187,8 @@ struct IlaSim::Impl {
     return results;
   }
 
-  void RebuildMemory(size_t state_index) {
-    auto sort = variable_symbols[state_index].get_sort();
-    auto memory = Zero(context, sort);
-    for (const auto& [address, value] : memory_cells[state_index]) {
-      auto address_expr = context.bv_val(address, sort.array_domain().bv_size());
-      memory = z3::store(memory, address_expr, value);
-    }
-    variable_values[state_index] = memory;
-  }
-
-  // Reads the written cells back out of a folded memory value (outermost store wins).
-  void CollectMemoryCells(size_t state_index) {
+  // Reads the written cells out of a folded memory value (outermost store wins).
+  std::map<uint64_t, z3::expr> ReadCells(size_t state_index) const {
     std::map<uint64_t, z3::expr> cells;
     auto memory = variable_values[state_index];
     while (memory.is_app() && memory.decl().decl_kind() == Z3_OP_STORE) {
@@ -210,21 +197,33 @@ struct IlaSim::Impl {
       cells.emplace(memory.arg(1).get_numeral_uint64(), memory.arg(2));
       memory = memory.arg(0);
     }
-    if (!(memory.is_app() && memory.decl().decl_kind() == Z3_OP_CONST_ARRAY))
+    bool is_fully_known = memory.is_app() && memory.decl().decl_kind() == Z3_OP_CONST_ARRAY;
+    if (!is_fully_known)
       throw std::runtime_error("ILA: unexpected value for " + states[state_index].name() + ": " +
                                memory.to_string().substr(0, 200));
-    memory_cells[state_index] = cells;
+    return cells;
+  }
+
+  // Rebuilds an array with one store per written cell.
+  void CompactArray(size_t state_index) {
+    auto sort = variable_symbols[state_index].get_sort();
+    auto memory = Zero(context, sort);
+    for (const auto& [address, value] : ReadCells(state_index)) {
+      auto address_expr = context.bv_val(address, sort.array_domain().bv_size());
+      memory = z3::store(memory, address_expr, value);
+    }
+    variable_values[state_index] = memory;
   }
 
   void ApplyUpdates(const TranslatedInstruction& instruction) {
     auto next_values = Evaluate(instruction.updates);
     for (size_t i = 0; i < instruction.updated_state_indices.size(); i++)
       variable_values[instruction.updated_state_indices[i]] = next_values[i];
+    // simplify() doesn't reliably drop overwritten stores. For example,
+    // store(store(store(m, a, x), b, y), a, z) can keep the dead write (a, x). Across thousands
+    // of steps, rows that get written again and again would make the chain grow without limit.
     for (auto state_index : instruction.updated_state_indices)
-      if (memory_cells.count(state_index)) {
-        CollectMemoryCells(state_index);
-        RebuildMemory(state_index);
-      }
+      if (variable_symbols[state_index].is_array()) CompactArray(state_index);
   }
 
   std::vector<const TranslatedInstruction*> CandidateInstructions(InstructionKind kind) const {
@@ -254,7 +253,7 @@ struct IlaSim::Impl {
 
   Rows ReadRows(size_t state_index, unsigned element_bits, Signedness signedness) const {
     Rows rows;
-    for (const auto& [address, packed_row] : memory_cells.at(state_index)) {
+    for (const auto& [address, packed_row] : ReadCells(state_index)) {
       auto& row = rows[address];
       unsigned row_bits = packed_row.get_sort().bv_size();
       for (unsigned bit_offset = 0; bit_offset < row_bits; bit_offset += element_bits) {
@@ -272,10 +271,6 @@ IlaSim::~IlaSim() = default;
 
 std::vector<std::string> IlaSim::Exec(unsigned funct, uint64_t rs1, uint64_t rs2) {
   auto& simulator = *impl_;
-  if (simulator.dram_dirty) {
-    simulator.RebuildMemory(simulator.dram_state);
-    simulator.dram_dirty = false;
-  }
   std::vector<std::string> executed_steps;
   unsigned funct_bits = simulator.variable_symbols[simulator.funct_input].get_sort().bv_size();
   if (funct >> funct_bits) return executed_steps; // does not fit the ILA's funct input
@@ -301,9 +296,9 @@ std::vector<std::string> IlaSim::Exec(unsigned funct, uint64_t rs1, uint64_t rs2
 
 void IlaSim::WriteDram(uint64_t addr, uint8_t byte) {
   auto& simulator = *impl_;
-  simulator.memory_cells[simulator.dram_state].insert_or_assign(
-      addr, simulator.context.bv_val(byte, DRAM_DATA_WIDTH));
-  simulator.dram_dirty = true;
+  auto& dram = simulator.variable_values[simulator.dram_state];
+  auto address = simulator.context.bv_val(addr, dram.get_sort().array_domain().bv_size());
+  dram = z3::store(dram, address, simulator.context.bv_val(byte, DRAM_DATA_WIDTH));
 }
 
 ArchState IlaSim::State() const {
