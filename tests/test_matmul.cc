@@ -9,7 +9,7 @@ using namespace gemmini;
 
 void test_matmul_preload(Gemmini& gem)
 {
-    CHECK("Preload records the D/B and C operands", gem, { "config_ex", "matmul.preload" },
+    CHECK("Preload systolic array of DIM 2x2", gem, { "config_ex", "matmul.preload" },
 
         [&](ilang::IlaZ3Unroller& u, z3::solver& s, z3::context& ctx) {
         uint64_t rs1_val = 0;
@@ -22,7 +22,7 @@ void test_matmul_preload(Gemmini& gem)
         rs1_val |= (0x3F800000ULL << 32); // bits 63:32 = 1.0f
         
         // rs2[31:0] = 8 (right shift)
-        uint64_t rs2_val = 1ULL << 48; // c_stride 1, no right shift
+        uint64_t rs2_val = 0;
         
         cstr_step_bv(s, u, ctx, gem.rs1, rs1_val, 64, 0);
         cstr_step_bv(s, u, ctx, gem.rs2, rs2_val, 64, 0);
@@ -47,18 +47,19 @@ void test_matmul_preload(Gemmini& gem)
             EXPECT_TRUE(dest_row == "2");
             EXPECT_TRUE(dest_col == "2");
 
-            // The PEs are loaded by the following matmul.compute.preloaded
-            auto preload_addr = TO_STR(gem.preload_addr, 2, u, mdl);
-            auto preload_row = HexToDecimalString(TO_STR(gem.preload_row, 2, u, mdl));
-            auto preload_col = HexToDecimalString(TO_STR(gem.preload_col, 2, u, mdl));
-            EXPECT_TRUE(preload_addr == "#x00000000");
-            EXPECT_TRUE(preload_row == "2");
-            EXPECT_TRUE(preload_col == "2"); });
+            auto element1 = HexToDecimalString(TO_STR(gem.sys_array[0][0]->stationary_reg, 2, u, mdl));
+            auto element2 = HexToDecimalString(TO_STR(gem.sys_array[0][1]->stationary_reg, 2, u, mdl));
+            auto element3 = HexToDecimalString(TO_STR(gem.sys_array[1][0]->stationary_reg, 2, u, mdl));
+            auto element4 = HexToDecimalString(TO_STR(gem.sys_array[1][1]->stationary_reg, 2, u, mdl));
+            EXPECT_TRUE(element1 == "1");
+            EXPECT_TRUE(element2 == "1");
+            EXPECT_TRUE(element3 == "2");
+            EXPECT_TRUE(element4 == "3"); });
 }
 
 void test_compute_preload_OS(Gemmini& gem)
 {
-    CHECK("Preload calculation of two arrays of DIM 2x2 in OS mode", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
+    CHECK("Preload calculation of two arrays of DIM 2x2 in OS mode", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
 
         [&](ilang::IlaZ3Unroller& u, z3::solver& s, z3::context& ctx) {
             uint64_t rs1_val = 0;
@@ -71,7 +72,7 @@ void test_compute_preload_OS(Gemmini& gem)
             rs1_val |= (0x3F800000ULL << 32); // bits 63:32 = 1.0f
 
             // rs2[31:0] = 0 (right shift)
-            uint64_t rs2_val = 1ULL << 48; // c_stride 1, no right shift
+            uint64_t rs2_val = 0;
 
             cstr_step_bv(s, u, ctx, gem.rs1, rs1_val, 64, 0);
             cstr_step_bv(s, u, ctx, gem.rs2, rs2_val, 64, 0);
@@ -110,10 +111,10 @@ void test_compute_preload_OS(Gemmini& gem)
         // Expect
         // 3 0
         // 3 0
-        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 8, u, mdl));
-        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 8, u, mdl));
-        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 8, u, mdl));
-        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 8, u, mdl));
+        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 7, u, mdl));
+        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 7, u, mdl));
+        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 7, u, mdl));
+        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 7, u, mdl));
         EXPECT_TRUE(elem1 == "3");
         EXPECT_TRUE(elem2 == "0");
         EXPECT_TRUE(elem3 == "3");
@@ -122,7 +123,7 @@ void test_compute_preload_OS(Gemmini& gem)
 
 void test_compute_preload_WS(Gemmini& gem)
 {
-    CHECK("Preload calculation of two arrays of DIM 2x2 in WS mode", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
+    CHECK("Preload calculation of two arrays of DIM 2x2 in WS mode", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
 
         [&](ilang::IlaZ3Unroller& u, z3::solver& s, z3::context& ctx) {
             uint64_t rs1_val = 0;
@@ -135,7 +136,7 @@ void test_compute_preload_WS(Gemmini& gem)
             rs1_val |= (0x3F800000ULL << 32); // bits 63:32 = 1.0f
 
             // rs2[31:0] = 0 (right shift)
-            uint64_t rs2_val = 1ULL << 48; // c_stride 1, no right shift
+            uint64_t rs2_val = 0;
 
             cstr_step_bv(s, u, ctx, gem.rs1, rs1_val, 64, 0);
             cstr_step_bv(s, u, ctx, gem.rs2, rs2_val, 64, 0);
@@ -174,10 +175,10 @@ void test_compute_preload_WS(Gemmini& gem)
         // Expect
         // 1 0
         // 2 0
-        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 8, u, mdl));
-        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 8, u, mdl));
-        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 8, u, mdl));
-        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 8, u, mdl));
+        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 7, u, mdl));
+        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 7, u, mdl));
+        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 7, u, mdl));
+        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 7, u, mdl));
         EXPECT_TRUE(elem1 == "1");
         EXPECT_TRUE(elem2 == "0");
         EXPECT_TRUE(elem3 == "2");
@@ -186,7 +187,7 @@ void test_compute_preload_WS(Gemmini& gem)
 
 void test_compute_preload_OS_A_transpose(Gemmini& gem)
 {
-    CHECK("Preload calculation OS 2x2 with A transpose", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
+    CHECK("Preload calculation OS 2x2 with A transpose", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
 
         [&](ilang::IlaZ3Unroller& u, z3::solver& s, z3::context& ctx) {
         uint64_t rs1_val = 0;
@@ -198,7 +199,7 @@ void test_compute_preload_OS_A_transpose(Gemmini& gem)
         rs1_val |= (1ULL << 16);         // bits 31:16 = 1 (A stride)
         rs1_val |= (0x3F800000ULL << 32); // bits 63:32 = 1.0f
 
-        uint64_t rs2_val = 1ULL << 48; // c_stride 1, no right shift
+        uint64_t rs2_val = 0; // right shift
 
         cstr_step_bv(s, u, ctx, gem.rs1, rs1_val, 64, 0);
         cstr_step_bv(s, u, ctx, gem.rs2, rs2_val, 64, 0);
@@ -230,10 +231,10 @@ void test_compute_preload_OS_A_transpose(Gemmini& gem)
         // Expect
         // 1 3
         // 2 0
-        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 8, u, mdl));
-        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 8, u, mdl));
-        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 8, u, mdl));
-        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 8, u, mdl));
+        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 7, u, mdl));
+        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 7, u, mdl));
+        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 7, u, mdl));
+        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 7, u, mdl));
         EXPECT_TRUE(elem1 == "1");
         EXPECT_TRUE(elem2 == "3");
         EXPECT_TRUE(elem3 == "2");
@@ -242,7 +243,7 @@ void test_compute_preload_OS_A_transpose(Gemmini& gem)
 
 void test_compute_preload_OS_B_transpose(Gemmini& gem)
 {
-    CHECK("Preload calculation OS 2x2 with B transpose", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
+    CHECK("Preload calculation OS 2x2 with B transpose", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
 
         [&](ilang::IlaZ3Unroller& u, z3::solver& s, z3::context& ctx) {
         uint64_t rs1_val = 0;
@@ -254,7 +255,7 @@ void test_compute_preload_OS_B_transpose(Gemmini& gem)
         rs1_val |= (1ULL << 16);         // A stride
         rs1_val |= (0x3F800000ULL << 32); // scale 1.0f
 
-        uint64_t rs2_val = 1ULL << 48; // c_stride 1, no right shift
+        uint64_t rs2_val = 0;
 
         cstr_step_bv(s, u, ctx, gem.rs1, rs1_val, 64, 0);
         cstr_step_bv(s, u, ctx, gem.rs2, rs2_val, 64, 0);
@@ -286,10 +287,10 @@ void test_compute_preload_OS_B_transpose(Gemmini& gem)
         // Expect
         // 1 2
         // 0 0
-        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 8, u, mdl));
-        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 8, u, mdl));
-        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 8, u, mdl));
-        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 8, u, mdl));
+        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 7, u, mdl));
+        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 7, u, mdl));
+        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 7, u, mdl));
+        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 7, u, mdl));
         EXPECT_TRUE(elem1 == "1");
         EXPECT_TRUE(elem2 == "2");
         EXPECT_TRUE(elem3 == "0");
@@ -298,7 +299,7 @@ void test_compute_preload_OS_B_transpose(Gemmini& gem)
 
 void test_compute_preload_OS_AB_transpose(Gemmini& gem)
 {
-    CHECK("Preload calculation OS 2x2 with A and B transpose", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
+    CHECK("Preload calculation OS 2x2 with A and B transpose", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
 
         [&](ilang::IlaZ3Unroller& u, z3::solver& s, z3::context& ctx) {
         uint64_t rs1_val = 0;
@@ -310,7 +311,7 @@ void test_compute_preload_OS_AB_transpose(Gemmini& gem)
         rs1_val |= (1ULL << 16);         // A stride
         rs1_val |= (0x3F800000ULL << 32); // scale 1.0f
 
-        uint64_t rs2_val = 1ULL << 48; // c_stride 1, no right shift
+        uint64_t rs2_val = 0;
 
         cstr_step_bv(s, u, ctx, gem.rs1, rs1_val, 64, 0);
         cstr_step_bv(s, u, ctx, gem.rs2, rs2_val, 64, 0);
@@ -342,10 +343,10 @@ void test_compute_preload_OS_AB_transpose(Gemmini& gem)
         // Expect
         // 1 2
         // 2 4
-        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 8, u, mdl));
-        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 8, u, mdl));
-        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 8, u, mdl));
-        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 8, u, mdl));
+        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 7, u, mdl));
+        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 7, u, mdl));
+        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 7, u, mdl));
+        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 7, u, mdl));
         EXPECT_TRUE(elem1 == "1");
         EXPECT_TRUE(elem2 == "2");
         EXPECT_TRUE(elem3 == "2");
@@ -354,7 +355,7 @@ void test_compute_preload_OS_AB_transpose(Gemmini& gem)
 
 void test_compute_preload_WS_A_transpose(Gemmini& gem)
 {
-    CHECK("Preload calculation WS 2x2 with A transpose", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
+    CHECK("Preload calculation WS 2x2 with A transpose", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
 
         [&](ilang::IlaZ3Unroller& u, z3::solver& s, z3::context& ctx) {
         uint64_t rs1_val = 0;
@@ -366,7 +367,7 @@ void test_compute_preload_WS_A_transpose(Gemmini& gem)
         rs1_val |= (1ULL << 16);         // A stride
         rs1_val |= (0x3F800000ULL << 32); // scale 1.0f
 
-        uint64_t rs2_val = 1ULL << 48; // c_stride 1, no right shift
+        uint64_t rs2_val = 0;
 
         cstr_step_bv(s, u, ctx, gem.rs1, rs1_val, 64, 0);
         cstr_step_bv(s, u, ctx, gem.rs2, rs2_val, 64, 0);
@@ -399,10 +400,10 @@ void test_compute_preload_WS_A_transpose(Gemmini& gem)
         // 1 3
         // 2 0
     
-        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 8, u, mdl));
-        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 8, u, mdl));
-        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 8, u, mdl));
-        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 8, u, mdl));
+        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 7, u, mdl));
+        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 7, u, mdl));
+        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 7, u, mdl));
+        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 7, u, mdl));
         EXPECT_TRUE(elem1 == "1");
         EXPECT_TRUE(elem2 == "3");
         EXPECT_TRUE(elem3 == "2");
@@ -411,7 +412,7 @@ void test_compute_preload_WS_A_transpose(Gemmini& gem)
 
 void test_compute_preload_WS_B_transpose(Gemmini& gem)
 {
-    CHECK("Preload calculation WS 2x2 with B transpose", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
+    CHECK("Preload calculation WS 2x2 with B transpose", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
 
         [&](ilang::IlaZ3Unroller& u, z3::solver& s, z3::context& ctx) {
         uint64_t rs1_val = 0;
@@ -423,7 +424,7 @@ void test_compute_preload_WS_B_transpose(Gemmini& gem)
         rs1_val |= (1ULL << 16);         // A stride
         rs1_val |= (0x3F800000ULL << 32); // scale 1.0f
 
-        uint64_t rs2_val = 1ULL << 48; // c_stride 1, no right shift
+        uint64_t rs2_val = 0;
 
         cstr_step_bv(s, u, ctx, gem.rs1, rs1_val, 64, 0);
         cstr_step_bv(s, u, ctx, gem.rs2, rs2_val, 64, 0);
@@ -455,10 +456,10 @@ void test_compute_preload_WS_B_transpose(Gemmini& gem)
         // Expect
         // 1 2
         // 0 0
-        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 8, u, mdl));
-        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 8, u, mdl));
-        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 8, u, mdl));
-        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 8, u, mdl));
+        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 7, u, mdl));
+        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 7, u, mdl));
+        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 7, u, mdl));
+        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 7, u, mdl));
         EXPECT_TRUE(elem1 == "1");
         EXPECT_TRUE(elem2 == "2");
         EXPECT_TRUE(elem3 == "0");
@@ -467,7 +468,7 @@ void test_compute_preload_WS_B_transpose(Gemmini& gem)
 
 void test_compute_preload_WS_AB_transpose(Gemmini& gem)
 {
-    CHECK("Preload calculation WS 2x2 with A and B transpose", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
+    CHECK("Preload calculation WS 2x2 with A and B transpose", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step" },
 
         [&](ilang::IlaZ3Unroller& u, z3::solver& s, z3::context& ctx) {
         uint64_t rs1_val = 0;
@@ -479,7 +480,7 @@ void test_compute_preload_WS_AB_transpose(Gemmini& gem)
         rs1_val |= (1ULL << 16);         // A stride
         rs1_val |= (0x3F800000ULL << 32); // scale 1.0f
 
-        uint64_t rs2_val = 1ULL << 48; // c_stride 1, no right shift
+        uint64_t rs2_val = 0;
 
         cstr_step_bv(s, u, ctx, gem.rs1, rs1_val, 64, 0);
         cstr_step_bv(s, u, ctx, gem.rs2, rs2_val, 64, 0);
@@ -512,10 +513,10 @@ void test_compute_preload_WS_AB_transpose(Gemmini& gem)
         // 1 2
         // 3 6
         
-        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 8, u, mdl));
-        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 8, u, mdl));
-        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 8, u, mdl));
-        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 8, u, mdl));
+        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 7, u, mdl));
+        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 7, u, mdl));
+        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 7, u, mdl));
+        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 7, u, mdl));
         EXPECT_TRUE(elem1 == "1");
         EXPECT_TRUE(elem2 == "2");
         EXPECT_TRUE(elem3 == "2");
@@ -524,7 +525,7 @@ void test_compute_preload_WS_AB_transpose(Gemmini& gem)
 
 void test_compute_accumulate_OS(Gemmini& gem)
 {
-    CHECK("Accumulated calculation of two arrays of DIM 2x2 OS", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.accumulated", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step" },
+    CHECK("Accumulated calculation of two arrays of DIM 2x2 OS", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.accumulated", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step" },
 
         [&](ilang::IlaZ3Unroller& u, z3::solver& s, z3::context& ctx) {
         uint64_t rs1_val = 0;
@@ -537,7 +538,7 @@ void test_compute_accumulate_OS(Gemmini& gem)
         rs1_val |= (0x3F800000ULL << 32); // bits 63:32 = 1.0f
         
         // rs2[31:0] = 8 (right shift)
-        uint64_t rs2_val = 1ULL << 48; // c_stride 1, no right shift
+        uint64_t rs2_val = 0;
         
         cstr_step_bv(s, u, ctx, gem.rs1, rs1_val, 64, 0);
         cstr_step_bv(s, u, ctx, gem.rs2, rs2_val, 64, 0);
@@ -572,17 +573,17 @@ void test_compute_accumulate_OS(Gemmini& gem)
         cstr_step_bv(s, u, ctx, gem.rs2, build_rs(0x00003000, 2, 2), 64, 2);
     
         // Accumulate instruction
-        cstr_step_bv(s, u, ctx, gem.rs1, build_rs(0x00002000, 2, 2), 64, 8);
-        cstr_step_bv(s, u, ctx, gem.rs2, build_rs(0x00003000, 2, 2), 64, 8); },
+        cstr_step_bv(s, u, ctx, gem.rs1, build_rs(0x00002000, 2, 2), 64, 7);
+        cstr_step_bv(s, u, ctx, gem.rs2, build_rs(0x00003000, 2, 2), 64, 7); },
 
         [&](z3::model& mdl, ilang::IlaZ3Unroller& u) {
         // Expect
         // 6 0
         // 6 0
-        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 14, u, mdl));
-        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 14, u, mdl));
-        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 14, u, mdl));
-        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 14, u, mdl));
+        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 12, u, mdl));
+        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 12, u, mdl));
+        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 12, u, mdl));
+        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 12, u, mdl));
         EXPECT_TRUE(elem1 == "6");
         EXPECT_TRUE(elem2 == "0");
         EXPECT_TRUE(elem3 == "6");
@@ -591,7 +592,7 @@ void test_compute_accumulate_OS(Gemmini& gem)
 
 void test_compute_accumulate_WS(Gemmini& gem)
 {
-    CHECK("Accumulated calculation of two arrays of DIM 2x2 WS", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.accumulated", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step" },
+    CHECK("Accumulated calculation of two arrays of DIM 2x2 WS", gem, { "config_ex", "matmul.preload", "matmul.compute.preloaded", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.preloaded_step", "matmul.compute.accumulated", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step", "matmul.compute.accumulated_step" },
 
         [&](ilang::IlaZ3Unroller& u, z3::solver& s, z3::context& ctx) {
             uint64_t rs1_val = 0;
@@ -604,7 +605,7 @@ void test_compute_accumulate_WS(Gemmini& gem)
             rs1_val |= (0x3F800000ULL << 32); // bits 63:32 = 1.0f
 
             // rs2[31:0] = 8 (right shift)
-            uint64_t rs2_val = 1ULL << 48; // c_stride 1, no right shift
+            uint64_t rs2_val = 0;
 
             cstr_step_bv(s, u, ctx, gem.rs1, rs1_val, 64, 0);
             cstr_step_bv(s, u, ctx, gem.rs2, rs2_val, 64, 0);
@@ -638,17 +639,17 @@ void test_compute_accumulate_WS(Gemmini& gem)
             cstr_step_bv(s, u, ctx, gem.rs1, build_rs(0x00002000, 2, 2), 64, 2);
             cstr_step_bv(s, u, ctx, gem.rs2, build_rs(0x00003000, 2, 2), 64, 2);
 
-            cstr_step_bv(s, u, ctx, gem.rs1, build_rs(0x00002000, 2, 2), 64, 8);
-            cstr_step_bv(s, u, ctx, gem.rs2, build_rs(0x00003000, 2, 2), 64, 8); },
+            cstr_step_bv(s, u, ctx, gem.rs1, build_rs(0x00002000, 2, 2), 64, 7);
+            cstr_step_bv(s, u, ctx, gem.rs2, build_rs(0x00003000, 2, 2), 64, 7); },
 
         [&](z3::model& mdl, ilang::IlaZ3Unroller& u) {
         // Expect
         // 3 0
         // 3 0
-        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 14, u, mdl));
-        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 14, u, mdl));
-        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 14, u, mdl));
-        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 14, u, mdl));
+        auto elem1 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 7, 0), 12, u, mdl));
+        auto elem2 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001000), 15, 8), 12, u, mdl));
+        auto elem3 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 7, 0), 12, u, mdl));
+        auto elem4 = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00001001), 15, 8), 12, u, mdl));
         EXPECT_TRUE(elem1 == "3");
         EXPECT_TRUE(elem2 == "0");
         EXPECT_TRUE(elem3 == "3");
@@ -670,7 +671,7 @@ void test_compute_atomic_OS(Gemmini& gem)
             rs1_val |= (0x3F800000ULL << 32); // bits 63:32 = 1.0f
 
             // rs2[31:0] = 0 (right shift)
-            uint64_t rs2_val = 1ULL << 48; // c_stride 1, no right shift
+            uint64_t rs2_val = 0;
 
             cstr_step_bv(s, u, ctx, gem.rs1, rs1_val, 64, 0);
             cstr_step_bv(s, u, ctx, gem.rs2, rs2_val, 64, 0);
@@ -733,7 +734,7 @@ void test_compute_atomic_WS(Gemmini& gem)
             rs1_val |= (0x3F800000ULL << 32); // bits 63:32 = 1.0f
 
             // rs2[31:0] = 0 (right shift)
-            uint64_t rs2_val = 1ULL << 48; // c_stride 1, no right shift
+            uint64_t rs2_val = 0;
 
             cstr_step_bv(s, u, ctx, gem.rs1, rs1_val, 64, 0);
             cstr_step_bv(s, u, ctx, gem.rs2, rs2_val, 64, 0);
@@ -788,7 +789,7 @@ bool verifyComputeAtomicVsStepped(const gemmini::cfg& Cfg, int atomic_steps, int
     std::cout << "[1] Building atomic and stepped ILA models...\n";
 
     // Build both models
-    Gemmini atomic { Cfg, "gematomic", Gemmini::ComputeModel::Atomic };
+    Gemmini atomic { Cfg, "gematomic" };
     Gemmini stepped { Cfg, "gemstepped" };
 
     atomic.AddInstructions();
@@ -828,7 +829,7 @@ bool verifyComputeAtomicVsStepped(const gemmini::cfg& Cfg, int atomic_steps, int
     auto activation_func_atomic = atomic_ila.state("activation_func");
     auto A_stride_atomic = atomic_ila.state("A_stride");
     auto scalar_atomic = atomic_ila.state("scalar");
-    auto acc_type_atomic = atomic_ila.state("acc_type_0");
+    auto acc_type_atomic = atomic_ila.state("acc_type");
 
     // Stepped model states
     auto a_stepped = stepped_ila.state("A_addr");
@@ -850,7 +851,7 @@ bool verifyComputeAtomicVsStepped(const gemmini::cfg& Cfg, int atomic_steps, int
     auto activation_func_stepped = stepped_ila.state("activation_func");
     auto A_stride_stepped = stepped_ila.state("A_stride");
     auto scalar_stepped = stepped_ila.state("scalar");
-    auto acc_type_stepped = stepped_ila.state("acc_type_0");
+    auto acc_type_stepped = stepped_ila.state("acc_type");
     auto busy_stepped = stepped_ila.state("busy");
 
     // ----- 2. Unroll both models -----
@@ -865,7 +866,7 @@ bool verifyComputeAtomicVsStepped(const gemmini::cfg& Cfg, int atomic_steps, int
     unroller.AddInitPred(BD_row_atomic <= dim_bv);
     unroller.AddInitPred(BD_col_atomic <= dim_bv);
 
-    unroller.AddStepPred(0, cmd_atomic == matmul_compute_preloaded); // compute command
+    unroller.AddStepPred(0, cmd_atomic == BvConst(1, 3)); // compute command
     auto cstr_atomic = unroller.UnrollMonoConn(atomic_ila, atomic_steps);
     unroller.ClearInitPred();
     unroller.ClearStepPred();
@@ -878,9 +879,9 @@ bool verifyComputeAtomicVsStepped(const gemmini::cfg& Cfg, int atomic_steps, int
     unroller.AddInitPred(BD_col_atomic <= dim_bv);
 
     unroller.AddInitPred(busy_stepped == BoolConst(false));
-    unroller.AddStepPred(0, cmd_stepped == matmul_compute_preloaded); // start compute
+    unroller.AddStepPred(0, cmd_stepped == BvConst(4, 3)); // start compute
     for (int k = 1; k < stepped_steps; k++) {
-        unroller.AddStepPred(k, cmd_stepped == matmul_compute_preloaded); // stay in compute
+        unroller.AddStepPred(k, cmd_stepped == BvConst(4, 3)); // stay in compute
     }
     auto cstr_stepped = unroller.UnrollMonoConn(stepped_ila, stepped_steps);
     unroller.ClearInitPred();

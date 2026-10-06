@@ -25,13 +25,10 @@ void test_mvin(Gemmini& gem)
         // Set rs1 as DRAM address
         cstr_step_bv(s, u, ctx, gem.rs1, 0x0000000000001000, 64, 1);
         // Set scratchpad destination address as 0x2000, and move 1 row and 1 column
-        cstr_step_bv(s, u, ctx, gem.rs2, build_rs(0x2000, 1, 1), 64, 1);
-        // mvin, not mvin2 or mvin3: only the first load pipeline is configured
-        cstr_step_bv(s, u, ctx, gem.funct, 2, FUNCT_WIDTH, 1);
-        cstr_step_bv(s, u, ctx, gem.funct, 2, FUNCT_WIDTH, 2); },
+        cstr_step_bv(s, u, ctx, gem.rs2, build_rs(0x2000, 1, 1), 64, 1); },
 
         [&](z3::model& mdl, ilang::IlaZ3Unroller& u) {
-        auto result = HexToDecimalString(TO_STR(Extract(gem.scratchpad.Load(0x00002000), 7, 0), 3, u, mdl));
+        auto result = HexToDecimalString(TO_STR(gem.scratchpad.Load(0x00002000), 3, u, mdl));
         EXPECT_TRUE(result == "42"); });
 }
 
