@@ -1,36 +1,22 @@
 #!/bin/bash
-# Usage: [SEEDS=20] [OPS=<gen_random.py --ops>] [JOBS=<CPU count>] run.sh [ila-dir]
-#   ila-dir: ILA version to test, a directory with src/gemmini.cc and include/gemmini.h,
-#            relative to the Gemmini-ila root (default: . ; e.g. new)
-# Builds gemmini_diff in build/ against ila-dir, then runs it, JOBS programs at a time, on
+# Usage: [SEEDS=20] [OPS=<gen_random.py --ops>] [JOBS=<CPU count>] run_programs.sh
+# Called by ../run.sh, which builds gemmini_diff first. Runs gemmini_diff, JOBS programs at a
+# time, on
 #   1. the gemmini-rocc-tests programs that only use instructions the ILA can encode
 #      (funct 0-7), traced on the host, and
 #   2. SEEDS constrained-random programs from gen_random.py.
-# Prints one line per program as it finishes; full reports go to build/results/<name>.out
+# Prints one line per program as it finishes; full reports go to <build>/results/<name>.out
 # and per-instruction progress to logs/<name>.log.
 
 # Treat unset variables as errors.
 set -u
 # D: absolute path of this script's directory (tests-external).
 D=$(cd "$(dirname "$0")" && pwd)
-# ILA: absolute path of the ILA version to test (first argument, relative to the Gemmini-ila root).
-ILA=$(cd "$D/.." && cd "${1:-.}" && pwd) || exit 1
-[ -f "$ILA/src/gemmini.cc" ] || { echo "no src/gemmini.cc in $ILA"; exit 1; }
 # DIM: systolic array size; fixed at 16, the size libgemmini and the rocc-tests are written for.
 DIM=16
-# B: absolute path of the build directory, shared by every ILA version.
-B=$D/build
-mkdir -p "$B"
-
-# Configure the build for the chosen ILA version, then rebuild gemmini_diff; the output
-# goes to build.log, which is shown only when the build fails.
-echo "Building gemmini_diff against $ILA"
-if ! { cmake -S "$D" -B "$B" -DCMAKE_BUILD_TYPE=Release -DGEMMINI_ILA_DIR="$ILA" &&
-       cmake --build "$B" --target gemmini_diff -j; } > "$B/build.log" 2>&1; then
-  tail -n 30 "$B/build.log"
-  echo "build failed, full log: $B/build.log"
-  exit 1
-fi
+# B: absolute path of this suite's directory in the shared build, where gemmini_diff is.
+B=$D/../build/tests-external
+[ -x "$B/gemmini_diff" ] || { echo "no $B/gemmini_diff; run ../run.sh tests-external"; exit 1; }
 
 # LOGS: where gemmini_diff writes per-instruction progress, one file per program.
 LOGS=$D/logs

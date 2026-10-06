@@ -13,31 +13,28 @@ instruction, and the run stops at the first difference.
 | `src/ila_sim.*` | runs the ILA on concrete values (start instruction, then its `*_step`s) |
 | `hosttrace/` | turns a `gemmini-rocc-tests` program into a trace, on the host |
 | `gen_random.py` | writes constrained-random traces |
-| `run.sh` | runs both kinds and prints PASS/FAIL per program |
-| `dependencies/` | submodules: `gemmini-rocc-tests`, `libgemmini`, `riscv-isa-sim` (Spike) |
+| `run_programs.sh` | runs both kinds and prints PASS/FAIL per program (called by `../run.sh`) |
 
 ## Build
 
-Needs Z3 and `dtc` (device-tree-compiler, required by Spike's configure). ILAng is built from the
-Gemmini-ila submodule `../dependencies/ILAng`; Spike is built from its submodule into
-`<build>/spike` on the first build.
+Needs Z3 and `dtc` (device-tree-compiler, required by Spike's configure). The submodules
+`gemmini-rocc-tests`, `libgemmini`, `riscv-isa-sim` (Spike) and ILAng are in `../dependencies/`
+and are built in the shared `../build/` on the first build.
 
 ```sh
-git submodule update --init --recursive dependencies tests-external/dependencies
-cmake -S tests-external -B tests-external/build -DCMAKE_BUILD_TYPE=Release
-cmake --build tests-external/build -j
+git submodule update --init --recursive dependencies
 ```
 
 Both models are built with DIM 16, the size libgemmini and the rocc-tests are written for.
-`run.sh` builds for you.
+`../run.sh tests-external` builds for you.
 
 ## Run
 
 ```sh
-tests-external/run.sh                                  # rocc-tests + 20 random programs
-tests-external/run.sh new                              # same, built against new/src, new/include
-SEEDS=100 OPS=mvin,mvout,config_mvin,config_mvout tests-external/run.sh
-tests-external/build/gemmini_diff prog.trace           # one program; --log adds libgemmini's log
+./run.sh tests-external                                # rocc-tests + 20 random programs
+./run.sh tests-external new                            # same, built against new/src, new/include
+SEEDS=100 OPS=mvin,mvout,config_mvin,config_mvout ./run.sh tests-external
+build/tests-external/gemmini_diff prog.trace           # one program; --log adds libgemmini's log
 tests-external/hosttrace/trace.sh matmul_ws out.trace  # trace one rocc test (x86-64 gcc)
 tests-external/gen_random.py --dim 16 --seed 3 --ops mvin,mvout > out.trace
 ```
@@ -76,7 +73,7 @@ FAIL out.trace:274 (instruction 17)
   to each model.
 - Both models start with every state at 0.
 - The ILA's `funct` input is 3 bits wide, so instructions with funct 8 or more (loops,
-  counters) can't reach it. The rocc tests in `run.sh` are the ones that don't use them.
+  counters) can't reach it. The rocc tests in `run_programs.sh` are the ones that don't use them.
 - A host trace records CPU memory only where an mvin reads it, at the time of that mvin.
 - libgemmini is itself a model. If it looks wrong, check the RTL
   (`generators/gemmini/src/main/scala/gemmini`).

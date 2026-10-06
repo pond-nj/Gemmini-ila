@@ -5,7 +5,7 @@
 set -e
 TEST=$1
 D=$(cd "$(dirname "$0")" && pwd)
-T=$D/../dependencies/gemmini-rocc-tests
+T=$D/../../dependencies/gemmini-rocc-tests
 BIN=$(mktemp)
 trap 'rm -f "$BIN"' EXIT
 gcc -w -O0 -std=gnu99 -DBAREMETAL=1 -DPREALLOCATE=1 -I"$D" -I"$T" -I"$T/riscv-tests" -I"$T/riscv-tests/env" \

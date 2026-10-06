@@ -1,3 +1,6 @@
+#include <fstream>
+#include <iostream>
+
 #include "gemmini.h"
 #include "test_helpers.h"
 
