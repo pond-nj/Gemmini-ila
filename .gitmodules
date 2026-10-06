@@ -7,3 +7,6 @@
 [submodule "riscv-isa-sim"]
 	path = tests-external/dependencies/riscv-isa-sim
 	url = https://github.com/riscv-software-src/riscv-isa-sim.git
+[submodule "dependencies/ILAng"]
+	path = dependencies/ILAng
+	url = https://github.com/Bo-Yuan-Huang/ILAng

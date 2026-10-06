@@ -27,41 +27,21 @@ ILAng requires CMake (3.9.6 or above) and a compiler with C++17 support. To inst
 
 ### Installation 
 
-This repo does not vendor or track ILAng directly — you'll need to clone it separately alongside this repo before building.
+ILAng is tracked as a git submodule at `dependencies/ILAng` and is built together with the model.
 
-1. Clone this repo
+1. Clone this repo with its submodules
    ```sh
-   git clone https://github.com/VllyVlly/Gemmini-ila
+   git clone --recursive https://github.com/VllyVlly/Gemmini-ila
    cd gemmini-ila
    ```
-2. Clone ILAng at the root of this repo
-   ```sh
-   git clone https://github.com/Bo-Yuan-Huang/ILAng
-   ```
-   Your directory structure should now look like:
-   ```
-   gemmini-ila/
-   ├── ILAng/
-   ├── src/
-   ├── CMakeLists.txt
-   └── ...
-   ```
-3. Build ILAng
-   ```sh
-   cd ILAng
-   mkdir build && cd build
-   cmake ..
-   make -j$(nproc)
-   sudo make install
-   cd ../..
-   ```
-4. Build the Gemmini ILA model
+   For an existing clone, run `git submodule update --init --recursive dependencies`.
+2. Build the Gemmini ILA model
    ```sh
    mkdir build && cd build
    cmake ..
    make -j$(nproc)
    ```
-5. Run the test suite
+3. Run the test suite
    ```sh
    ./test_gemmini_ila
    ```

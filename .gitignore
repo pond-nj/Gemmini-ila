@@ -35,9 +35,7 @@ Makefile
 compile_commands.json
 *.cmake
 !CMakeLists.txt
-ILAng/
 
 build-debug/
-!tests-external/cmake/*.cmake
 
 tests-external/logs/

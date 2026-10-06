@@ -1,6 +1,11 @@
 #pragma once
 
-#include <bits/stdc++.h>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 #include <ilang/ilang++.h>
 
 using namespace ilang;

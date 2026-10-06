@@ -10,11 +10,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Write build/compile_commands.json for clangd; INTERNAL hides it from the cache editors.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "")
 
-# Let find_package see cmake/FindZ3.cmake.
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
-# Z3 solves/evaluates the ILA's expressions; ilang is the ILA library the model is written in.
-find_package(Z3 REQUIRED)
-find_package(ilang REQUIRED)
+# ilang, the ILA library the model is written in, is built from the Gemmini-ila ILAng submodule;
+# it finds Z3, which solves/evaluates the ILA's expressions, and passes it on via ilang::ilang.
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../dependencies ${CMAKE_CURRENT_BINARY_DIR}/dependencies)
 
 # The ILA version under test: a directory with src/gemmini.cc and include/gemmini.h.
 # A default only; run.sh passes -DGEMMINI_ILA_DIR=<dir>.

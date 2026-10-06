@@ -4,7 +4,7 @@ project(gemmini VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "")
 
-add_subdirectory(ILAng)
+add_subdirectory(dependencies)
 
 add_executable(test_gemmini_ila src/main.cc src/gemmini.cc src/test_helpers.cc tests/test_config.cc tests/test_mv.cc tests/test_matmul.cc)
 

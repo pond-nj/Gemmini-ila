@@ -25,7 +25,7 @@ mkdir -p "$B"
 # Configure the build for the chosen ILA version, then rebuild gemmini_diff; the output
 # goes to build.log, which is shown only when the build fails.
 echo "Building gemmini_diff against $ILA"
-if ! { cmake -S "$D" -B "$B" -DGEMMINI_ILA_DIR="$ILA" &&
+if ! { cmake -S "$D" -B "$B" -DCMAKE_BUILD_TYPE=Release -DGEMMINI_ILA_DIR="$ILA" &&
        cmake --build "$B" --target gemmini_diff -j; } > "$B/build.log" 2>&1; then
   tail -n 30 "$B/build.log"
   echo "build failed, full log: $B/build.log"
@@ -65,7 +65,7 @@ run_test() { # run_test <name>
   else
     # Summarise the failure from the report: line 2 is the mismatching trace line (whitespace
     # squeezed), line 4 is the first state difference.
-    echo "FAIL $1: $(sed -n '2{s/^ *//;s/ \+/ /g;p}' "$out") -> $(sed -n '4{s/^ *//;p}' "$out")"
+    echo "FAIL $1: $(sed -nE '2{s/^ *//;s/ +/ /g;p;}' "$out") -> $(sed -n '4{s/^ *//;p;}' "$out")"
   fi
 }
 # Make the functions and variables visible to the child bash processes that xargs starts.

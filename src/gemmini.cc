@@ -1,6 +1,11 @@
 #include "gemmini.h"
 
-#include <bits/stdc++.h>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 #include <ilang/ilang++.h>
 
 namespace gemmini {

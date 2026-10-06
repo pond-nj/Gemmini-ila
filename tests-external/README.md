@@ -18,13 +18,13 @@ instruction, and the run stops at the first difference.
 
 ## Build
 
-Needs an installed ILAng (`ilangConfig.cmake`), Z3, and `dtc` (device-tree-compiler, required by
-Spike's configure). Spike is built from the submodule into `<build>/spike` on the first build.
+Needs Z3 and `dtc` (device-tree-compiler, required by Spike's configure). ILAng is built from the
+Gemmini-ila submodule `../dependencies/ILAng`; Spike is built from its submodule into
+`<build>/spike` on the first build.
 
 ```sh
-git submodule update --init --recursive tests-external/dependencies
-cmake -S tests-external -B tests-external/build -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_PREFIX_PATH="<ilang install>;<z3 install>"
+git submodule update --init --recursive dependencies tests-external/dependencies
+cmake -S tests-external -B tests-external/build -DCMAKE_BUILD_TYPE=Release
 cmake --build tests-external/build -j
 ```
 
