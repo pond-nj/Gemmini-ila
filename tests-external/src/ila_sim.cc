@@ -42,10 +42,6 @@ std::optional<uint64_t> DecodeAccumulatorRow(uint64_t address, size_t row_count)
 }
 
 uint64_t ExtractElement(const z3::expr& packed_row, unsigned bit_offset, unsigned element_bits) {
-  if (packed_row.get_sort().bv_size() <= 64) {
-    uint64_t mask = (uint64_t{2} << (element_bits - 1)) - 1;
-    return (packed_row.get_numeral_uint64() >> bit_offset) & mask;
-  }
   return packed_row.extract(bit_offset + element_bits - 1, bit_offset).simplify().get_numeral_uint64();
 }
 

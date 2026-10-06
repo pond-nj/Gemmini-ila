@@ -41,9 +41,11 @@ int main()
 
     Gemmini gem { Config1, "gem1" };
     Gemmini gem_matmul { Config2, "gem2" }; // 2x2 systolic array for convenience
+    Gemmini gem_atomic { Config2, "gem3", Gemmini::ComputeModel::Atomic };
 
     gem.AddInstructions();
     gem_matmul.AddInstructions();
+    gem_atomic.AddInstructions();
 
     // List architectural states and instructions
     list_states(gem);
@@ -70,15 +72,15 @@ int main()
     test_compute_preload_WS_B_transpose(gem_matmul);
     test_compute_preload_WS_AB_transpose(gem_matmul);
 
-    test_compute_atomic_OS(gem_matmul);
-    test_compute_atomic_WS(gem_matmul);
+    test_compute_atomic_OS(gem_atomic);
+    test_compute_atomic_WS(gem_atomic);
 
     // Summary
     print_test_summary();
 
     // Formal verification for atomic and stepped computation versions
     // Not done
-    verifyComputeAtomicVsStepped(Config2, 1, 2 * Config2.DIM);
+    verifyComputeAtomicVsStepped(Config2, 1, 3 * Config2.DIM);
 
     return 0;
 }
