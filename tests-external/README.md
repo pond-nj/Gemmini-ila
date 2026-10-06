@@ -24,19 +24,18 @@ Spike's configure). Spike is built from the submodule into `<build>/spike` on th
 ```sh
 git submodule update --init --recursive tests-external/dependencies
 cmake -S tests-external -B tests-external/build -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_PREFIX_PATH="<ilang install>;<z3 install>"   # optional: -DGEMMINI_DIM=4
+      -DCMAKE_PREFIX_PATH="<ilang install>;<z3 install>"
 cmake --build tests-external/build -j
 ```
 
-`GEMMINI_DIM` (default 16) sets DIM for both models. The rocc-tests traces need 16.
-`run.sh` builds for you, passing its `DIM` (default 16) as `GEMMINI_DIM`.
+Both models are built with DIM 16, the size libgemmini and the rocc-tests are written for.
+`run.sh` builds for you.
 
 ## Run
 
 ```sh
 tests-external/run.sh                                  # rocc-tests + 20 random programs
 tests-external/run.sh new                              # same, built against new/src, new/include
-DIM=4 tests-external/run.sh                            # rebuilds with DIM 4; random programs only
 SEEDS=100 OPS=mvin,mvout,config_mvin,config_mvout tests-external/run.sh
 tests-external/build/gemmini_diff prog.trace           # one program; --log adds libgemmini's log
 tests-external/hosttrace/trace.sh matmul_ws out.trace  # trace one rocc test (x86-64 gcc)

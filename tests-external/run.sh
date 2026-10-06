@@ -1,11 +1,10 @@
 #!/bin/bash
-# Usage: [DIM=16] [SEEDS=20] [OPS=<gen_random.py --ops>] [JOBS=<CPU count>] run.sh [ila-dir]
+# Usage: [SEEDS=20] [OPS=<gen_random.py --ops>] [JOBS=<CPU count>] run.sh [ila-dir]
 #   ila-dir: ILA version to test, a directory with src/gemmini.cc and include/gemmini.h,
 #            relative to the Gemmini-ila root (default: . ; e.g. new)
-#   DIM:     systolic array size both models are built with
-# Builds gemmini_diff in build/ against ila-dir and DIM, then runs it, JOBS programs at a time, on
+# Builds gemmini_diff in build/ against ila-dir, then runs it, JOBS programs at a time, on
 #   1. the gemmini-rocc-tests programs that only use instructions the ILA can encode
-#      (funct 0-7), traced on the host (they are written for DIM 16, so they run only then), and
+#      (funct 0-7), traced on the host, and
 #   2. SEEDS constrained-random programs from gen_random.py.
 # Prints one line per program as it finishes; full reports go to build/results/<name>.out
 # and per-instruction progress to logs/<name>.log.
@@ -17,16 +16,16 @@ D=$(cd "$(dirname "$0")" && pwd)
 # ILA: absolute path of the ILA version to test (first argument, relative to the Gemmini-ila root).
 ILA=$(cd "$D/.." && cd "${1:-.}" && pwd) || exit 1
 [ -f "$ILA/src/gemmini.cc" ] || { echo "no src/gemmini.cc in $ILA"; exit 1; }
-# DIM: systolic array size to build and test (default 16).
-DIM=${DIM:-16}
-# B: absolute path of the build directory, shared by every ILA version and DIM.
+# DIM: systolic array size; fixed at 16, the size libgemmini and the rocc-tests are written for.
+DIM=16
+# B: absolute path of the build directory, shared by every ILA version.
 B=$D/build
 mkdir -p "$B"
 
-# Configure the build for the chosen ILA version and DIM, then rebuild gemmini_diff; the output
+# Configure the build for the chosen ILA version, then rebuild gemmini_diff; the output
 # goes to build.log, which is shown only when the build fails.
-echo "Building gemmini_diff against $ILA with DIM $DIM"
-if ! { cmake -S "$D" -B "$B" -DGEMMINI_ILA_DIR="$ILA" -DGEMMINI_DIM="$DIM" &&
+echo "Building gemmini_diff against $ILA"
+if ! { cmake -S "$D" -B "$B" -DGEMMINI_ILA_DIR="$ILA" &&
        cmake --build "$B" --target gemmini_diff -j; } > "$B/build.log" 2>&1; then
   tail -n 30 "$B/build.log"
   echo "build failed, full log: $B/build.log"
@@ -74,15 +73,8 @@ export -f write_trace run_test
 export D B DIM LOGS
 export OPS=${OPS:-}
 
-# Build the list of programs to run.
-tests=""
-# The rocc-tests hard-code DIM 16, so include them only when the build matches.
-if [ "$DIM" = 16 ]; then
-  tests=$ROCC_TESTS
-else
-  echo "skipping gemmini-rocc-tests: they need GEMMINI_DIM=16, this build has $DIM"
-fi
-# Append random-1 .. random-$SEEDS (default 20).
+# Build the list of programs to run: the rocc-tests, then random-1 .. random-$SEEDS (default 20).
+tests=$ROCC_TESTS
 for s in $(seq 1 "${SEEDS:-20}"); do tests="$tests random-$s"; done
 
 echo "Logging per-instruction progress to $LOGS/<name>.log"

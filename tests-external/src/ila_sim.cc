@@ -18,13 +18,13 @@ constexpr uint64_t kAccumulatorRowMask = (uint64_t{1} << 29) - 1;
 
 enum class Signedness { Unsigned, Signed };
 
-cfg CreateConfig(size_t dimension) {
+cfg CreateConfig() {
   cfg model_config;
-  model_config.tileRows = dimension;
-  model_config.tileColumns = dimension;
+  model_config.tileRows = kDim;
+  model_config.tileColumns = kDim;
   model_config.meshRows = 1;
   model_config.meshColumns = 1;
-  model_config.DIM = dimension;
+  model_config.DIM = kDim;
   model_config.sp_banks = 4;
   model_config.sp_capacity = 64 * 1024;
   model_config.acc_capacity = 128 * 1024;
@@ -118,7 +118,7 @@ struct IlaSim::Impl {
   std::vector<TranslatedInstruction> start_instructions, step_instructions;
 
   explicit Impl(Geometry shape_)
-      : shape(shape_), gemmini_model(CreateConfig(shape.dim), "gemmini"),
+      : shape(shape_), gemmini_model(CreateConfig(), "gemmini"),
         translate_expression(context), variable_symbols(context) {
     gemmini_model.AddInstructions();
     Ila& model = gemmini_model.get();

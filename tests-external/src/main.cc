@@ -229,7 +229,7 @@ int SimulateAndCompare(std::istream& input, std::ostream& progress,
     return 1;
   }
   std::cout << "PASS " << position.path << " (" << position.instruction_count
-            << " instructions, DIM " << reference.Shape().dim << ")\n";
+            << " instructions, DIM " << kDim << ")\n";
   return 0;
 }
 

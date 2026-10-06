@@ -22,6 +22,8 @@
 #include "gemmini.h"
 #undef private
 
+static_assert(DIM == kDim, "libgemmini's gemmini_params.h must set DIM to kDim");
+
 namespace {
 
 // libgemmini's reset banner must not appear in differential-test results.
@@ -142,5 +144,5 @@ ArchState Golden::State() const {
 
 Geometry Golden::Shape() const {
   const auto& gemmini_state = impl_->gem.gemmini_state;
-  return {DIM, gemmini_state.spad.size(), gemmini_state.accumulator.size()};
+  return {gemmini_state.spad.size(), gemmini_state.accumulator.size()};
 }

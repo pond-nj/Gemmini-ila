@@ -6,8 +6,11 @@
 #include <string>
 #include <vector>
 
+// Systolic array size of both models: the DIM libgemmini and the rocc-tests are written for.
+constexpr size_t kDim = 16;
+
 struct Geometry {
-  size_t dim, sp_rows, acc_rows;
+  size_t sp_rows, acc_rows;
 };
 
 // Index (address or row) -> its elements.

@@ -10,10 +10,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Write build/compile_commands.json for clangd; INTERNAL hides it from the cache editors.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "")
 
-# Systolic array size for both models. The rocc-tests traces need 16 (their gemmini_params.h).
-# A default only: a -DGEMMINI_DIM=<n> on the command line (run.sh passes one) takes precedence.
-set(GEMMINI_DIM 16 CACHE STRING "Gemmini DIM for libgemmini and the ILA")
-
 # Let find_package see cmake/FindZ3.cmake.
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 # Z3 solves/evaluates the ILA's expressions; ilang is the ILA library the model is written in.
@@ -21,9 +17,10 @@ find_package(Z3 REQUIRED)
 find_package(ilang REQUIRED)
 
 # The ILA version under test: a directory with src/gemmini.cc and include/gemmini.h.
-# A default only, like GEMMINI_DIM; run.sh passes -DGEMMINI_ILA_DIR=<dir>.
+# A default only; run.sh passes -DGEMMINI_ILA_DIR=<dir>.
 set(GEMMINI_ILA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/.. CACHE PATH "Gemmini ILA version to test")
-# libgemmini sources: the reference Gemmini model the ILA is compared against.
+# libgemmini sources: the reference Gemmini model the ILA is compared against. Built with its own
+# gemmini_params.h, so DIM is 16, the size libgemmini and the rocc-tests are written for.
 set(LIBGEMMINI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/libgemmini)
 # Spike sources and the directory inside the build where Spike gets installed.
 set(SPIKE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/riscv-isa-sim)
@@ -57,22 +54,11 @@ set_target_properties(spike_riscv PROPERTIES
 # Build Spike before anything that links spike_riscv.
 add_dependencies(spike_riscv spike)
 
-# gemmini.h includes "gemmini_params.h" from its own directory, so copy libgemmini next to
-# a gemmini_params.h with DIM replaced.
-set(LIBGEMMINI_BUILD ${CMAKE_CURRENT_BINARY_DIR}/libgemmini)
-# Copy the sources unchanged (COPYONLY: no ${VAR} substitution); re-copied when they change.
-configure_file(${LIBGEMMINI_DIR}/gemmini.cc ${LIBGEMMINI_BUILD}/gemmini.cc COPYONLY)
-configure_file(${LIBGEMMINI_DIR}/gemmini.h ${LIBGEMMINI_BUILD}/gemmini.h COPYONLY)
-# Read the original gemmini_params.h, swap its DIM for GEMMINI_DIM, and write the result.
-file(READ ${LIBGEMMINI_DIR}/gemmini_params.h PARAMS)
-string(REGEX REPLACE "#define DIM [0-9]+" "#define DIM ${GEMMINI_DIM}" PARAMS "${PARAMS}")
-file(GENERATE OUTPUT ${LIBGEMMINI_BUILD}/gemmini_params.h CONTENT "${PARAMS}")
-
 # The reference model: libgemmini plus golden.cc, which wraps it in the shared GemminiModel
 # interface.
-add_library(libgemmini STATIC ${LIBGEMMINI_BUILD}/gemmini.cc src/golden.cc)
-# Find the copied gemmini.h and the generated gemmini_params.h.
-target_include_directories(libgemmini PRIVATE ${LIBGEMMINI_BUILD})
+add_library(libgemmini STATIC ${LIBGEMMINI_DIR}/gemmini.cc src/golden.cc)
+# Find gemmini.h and gemmini_params.h.
+target_include_directories(libgemmini PRIVATE ${LIBGEMMINI_DIR})
 # Silence warnings from the third-party libgemmini code.
 target_compile_options(libgemmini PRIVATE -w)
 # libgemmini runs on Spike's classes; PUBLIC passes Spike on to whatever links libgemmini.
