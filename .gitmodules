@@ -10,3 +10,6 @@
 [submodule "dependencies/ILAng"]
 	path = dependencies/ILAng
 	url = https://github.com/Bo-Yuan-Huang/ILAng
+[submodule "dependencies/gemmini"]
+	path = dependencies/gemmini
+	url = https://github.com/ucb-bar/gemmini.git
