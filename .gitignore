@@ -39,3 +39,6 @@ compile_commands.json
 build-debug/
 
 tests-external/logs/
+
+*.cache*
+counterexample.smt2

@@ -27,17 +27,21 @@ namespace gemmini {
 #define ACC_TYPE_BIT_WIDTH 32
 
 // RoCC funct7 values from the official ISA
+// Verify: gemmini/src/main/scala/gemmini/GemminiISA.scala:7-24 (values) and :60 (COUNTER_OP = 126.U(7.W), funct is 7 bits);
+//   riscv-isa-sim/riscv/rocc.h:15 (unsigned funct : 7)
 #define FUNCT_WIDTH 7
-#define config BvConst(0, FUNCT_WIDTH)
-#define mvin2 BvConst(1, FUNCT_WIDTH)
 #define mvin BvConst(2, FUNCT_WIDTH)
+#define mvin2 BvConst(1, FUNCT_WIDTH) // gemmini/src/main/scala/gemmini/GemminiISA.scala:9, LOAD2_CMD = 1
+#define mvin3 BvConst(14, FUNCT_WIDTH) // gemmini/src/main/scala/gemmini/GemminiISA.scala:24, LOAD3_CMD = 14
 #define mvout BvConst(3, FUNCT_WIDTH)
+#define config BvConst(0, FUNCT_WIDTH)
+#define matmul_preload BvConst(6, FUNCT_WIDTH)
 #define matmul_compute_preloaded BvConst(4, FUNCT_WIDTH)
 #define matmul_compute_accumulated BvConst(5, FUNCT_WIDTH)
-#define matmul_preload BvConst(6, FUNCT_WIDTH)
-#define mvin3 BvConst(14, FUNCT_WIDTH)
+// funct 1 is LOAD2_CMD, so the old matmul_compute_atomic (funct 1) is not in the ISA: GemminiISA.scala:9
 
 // mvin, mvin2 and mvin3 each have their own config_mvin registers
+// Verify: gemmini/README.md:411-412; gemmini/src/main/scala/gemmini/LoadController.scala:33-37 (one entry per load state)
 #define LOAD_PIPELINES 3
 
 enum class DataType : uint64_t {
@@ -108,27 +112,20 @@ struct cfg {
         , accType(accType_) { };
 };
 
-// A matrix operand of preload/compute: local address and size
-struct MatrixOperand {
-    ExprRef addr;
-    ExprRef rows;
-    ExprRef cols;
-};
-
 // Systolic array is made up of DIM x DIM PE
 struct PE {
     ExprRef A_reg;
     ExprRef B_D_reg;
     ExprRef stationary_reg;
-    ExprRef C_reg_out; // WS partial sum passed down
-    ExprRef result_reg; // WS result C[row][col], held until the write-back cycle
+    ExprRef C_reg_out;
 
     PE(Ila& m, size_t row, size_t col)
         : A_reg(m.NewBvState("PE_" + std::to_string(row) + "_" + std::to_string(col) + "_A", INPUT_TYPE_BIT_WIDTH))
         , B_D_reg(m.NewBvState("PE_" + std::to_string(row) + "_" + std::to_string(col) + "_B_D", INPUT_TYPE_BIT_WIDTH))
         , stationary_reg(m.NewBvState("PE_" + std::to_string(row) + "_" + std::to_string(col) + "_stat", ACC_TYPE_BIT_WIDTH))
-        , C_reg_out(m.NewBvState("PE_" + std::to_string(row) + "_" + std::to_string(col) + "_C_out", ACC_TYPE_BIT_WIDTH))
-        , result_reg(m.NewBvState("PE_" + std::to_string(row) + "_" + std::to_string(col) + "_result", ACC_TYPE_BIT_WIDTH)) { };
+        // Partial sums are not truncated to 16 bits: OS keeps accType in the PE (gemmini/src/main/scala/gemmini/PE.scala:58,70).
+        // Note: WS partial sums are spatialArrayOutputType = SInt(20.W) in the RTL (gemmini/src/main/scala/gemmini/Configs.scala:29, PE.scala:65)
+        , C_reg_out(m.NewBvState("PE_" + std::to_string(row) + "_" + std::to_string(col) + "_C_out", ACC_TYPE_BIT_WIDTH)) { };
 };
 
 class Gemmini {
@@ -151,7 +148,7 @@ public:
     ExprRef A_stride;
     ExprRef memory_stride_mvout;
     ExprRef right_shift;
-    ExprRef c_stride;
+    ExprRef c_stride; // config_ex rs2[63:48]: gemmini/src/main/scala/gemmini/GemminiISA.scala:221-225, ExecuteController.scala:565
 
     ExprRef activation_func;
     ExprRef A_T;
@@ -159,10 +156,12 @@ public:
     ExprRef scalar;
 
     // Store config: accumulator read scale and activation
+    // Verify: gemmini/src/main/scala/gemmini/GemminiISA.scala:132-160 (ConfigMvoutRs1/Rs2), StoreController.scala:101-102
     ExprRef acc_scale;
     ExprRef acc_activation;
 
     // Load pipeline config, one entry per mvin/mvin2/mvin3
+    // Verify: gemmini/src/main/scala/gemmini/LoadController.scala:33-37 (strides, scales, shrinks, block_strides per load state)
     std::vector<ExprRef> acc_type;
     std::vector<ExprRef> private_stride;
     std::vector<ExprRef> memory_stride_mvin;
@@ -184,7 +183,6 @@ public:
     ExprRef mvin_col_num;
     ExprRef mvin_row_num;
     ExprRef mvin_destination;
-    ExprRef mvin_pipeline;
 
     ExprRef mvout_DRAM_addr;
     ExprRef mvout_sour_addr;
@@ -197,6 +195,8 @@ public:
     ExprRef done;
 
     // matmul computation
+    // preload_* holds the matmul.preload D/B operand until the next compute, which executes it:
+    //   gemmini/src/main/scala/gemmini/ExecuteController.scala:84-87 (preload is issued together with the following compute)
     ExprRef preload_addr;
     ExprRef preload_row;
     ExprRef preload_col;
@@ -220,6 +220,7 @@ public:
     ExprRef rs2;
 
     // Atomic computes matmul.compute.preloaded in one step instead of cycle by cycle
+    // ILA modeling choice, not ISA: both models decode funct 4 (COMPUTE_AND_FLIP_CMD, gemmini/src/main/scala/gemmini/GemminiISA.scala:12)
     enum class ComputeModel { Stepped, Atomic };
     ComputeModel compute_model;
 
@@ -230,16 +231,6 @@ public:
     {
         return m;
     }
-
-private:
-    ExprRef SpadElem(const MatrixOperand& matrix, const ExprRef& row, const ExprRef& col);
-    ExprRef ElemA(const MatrixOperand& A, const ExprRef& i, const ExprRef& k);
-    ExprRef ElemB(const MatrixOperand& B, const ExprRef& k, const ExprRef& j);
-    ExprRef ElemD(const MatrixOperand& D, const ExprRef& i, const ExprRef& j);
-    ExprRef PreloadElem(size_t i, size_t j);
-    void SetResultWrite(InstrRef& instr, const std::vector<std::vector<ExprRef>>& results, const ExprRef& write_now);
-    void AddSteppedCompute(const std::string& name, const ExprRef& op, bool preload);
-    void AddAtomicCompute();
 };
 
 // Helper Functions
@@ -268,6 +259,8 @@ inline ExprRef Relu(const ExprRef& x)
 }
 
 // Rounds v / 2^shift (arithmetic) to the nearest integer, ties to even
+// Verify: gemmini/src/main/scala/gemmini/Arithmetic.scala:97-108 (SInt >>: rounds up iff half bit & (lower bits | ones digit), i.e. RNE;
+//   the "Rounds away from 0" comment at Arithmetic.scala:36 does not match the code)
 inline ExprRef RoundShiftRightEven(const ExprRef& v, const ExprRef& shift)
 {
     auto width = v.bit_width();
@@ -291,6 +284,8 @@ inline ExprRef RoundToFloat32(const ExprRef& magnitude, unsigned value_bits)
 }
 
 // Official float scale: float32(x) * scale in float32, rounded to nearest even, saturated to out_width bits
+// Verify: gemmini/src/main/scala/gemmini/Configs.scala:75-112 (mvin_scale_args) and 117-154 (acc_scale_args):
+//   INToRecFN, MulAddRecFN and RecFNToIN all use round_near_even, Float(8, 24); overflow saturates
 inline ExprRef FloatScale(const ExprRef& x, const ExprRef& scale_bits, unsigned out_width)
 {
     const unsigned W = 64;
@@ -313,12 +308,14 @@ inline ExprRef FloatScale(const ExprRef& x, const ExprRef& scale_bits, unsigned 
     return Ite(negative, -result, result);
 }
 
+// mvin scale saturates to inputType: gemmini/src/main/scala/gemmini/Configs.scala:101-107; applied at Scratchpad.scala:407-428
 inline ExprRef MvinScale(const ExprRef& x, const ExprRef& scale_bits)
 {
     return FloatScale(x, scale_bits, x.bit_width());
 }
 
 // Saturates a signed value to a signed out_width-bit value
+// Verify: gemmini/src/main/scala/gemmini/Arithmetic.scala:122-126 (SInt clippedToWidthOf)
 inline ExprRef Saturate(const ExprRef& x, unsigned out_width)
 {
     auto width = x.bit_width();

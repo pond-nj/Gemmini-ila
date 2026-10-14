@@ -1,0 +1,13 @@
+# Bug 2: mvin to the accumulator (not shrunk) reads each element as a 4-byte
+# little-endian int32 at addr + 4*col. The old ILA reads one byte at addr + col.
+# Where: src/gemmini.cc:157-161, mvin_step: element `elem` is one DRAM cell (one byte) at
+#   dram_base + elem; for the accumulator it should be 4 bytes at dram_base + 4*elem.
+# Spec: README.md:210 and 466: accumulator elements are accType (int32 in the default config),
+#   and config_mvin rs1[2] = 0 makes accumulator mvins accType. RTL LoadController.scala:108 and
+#   115-117 (has_acc_bitwidth: a row is cols * 4 bytes), Scratchpad.scala:446 (the row is read as
+#   a Vec of accType, element 0 in the low bytes).
+# Expected: accumulator row 0 col 0 = 0x11223344 = 287454020.
+# Old ILA: 0x44 = 68.
+config funct=0 rs1=0x3f80000000100001 rs2=0x0000000000000010
+.mem 0x10000 44332211
+mvin   funct=2 rs1=0x0000000000010000 rs2=0x0001000180000000

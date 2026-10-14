@@ -1,0 +1,14 @@
+# Bug 4: the local address flags rs2[31:29] select accumulator / accumulate / full width
+# and are stripped from the row address. Here bit 30 (accumulate) is set; the accumulator
+# starts at 0, so accumulating gives the same value as overwriting.
+# Where: src/gemmini.cc:111, mvin: dest_addr = Extract(rs2, 31, 0) keeps bits [31:29] and is
+#   used as the row index at line 145. Missing: strip the flags, and read bit 30 (accumulate).
+# Spec: README.md:363-373, "Memory Addressing Scheme": bit 31 = accumulator, bit 30 =
+#   accumulate on write, bit 29 = full-width read; the row is in the low bits. RTL
+#   LocalAddr.scala:20-22, Scratchpad.scala:832 (bit 30 selects accumulate) and 837
+#   (row = acc_row(), flags stripped).
+# Expected: accumulator row 0 col 0 = 5.
+# Old ILA: writes the stray accumulator index 0xc0000000 instead of row 0.
+config funct=0 rs1=0x3f80000000100001 rs2=0x0000000000000010
+.mem 0x10000 05000000
+mvin   funct=2 rs1=0x0000000000010000 rs2=0x00010001c0000000

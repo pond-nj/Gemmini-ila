@@ -1,0 +1,18 @@
+# Bug 6: config_mvin rs1[4:3] picks one of 3 load pipelines (mvin, mvin2, mvin3), each
+# with its own stride, scale and shrunk flag. The old ILA keeps one shared set.
+# Configure mvin (pipeline 0) with stride 16, then mvin2 (pipeline 1) with stride 32,
+# then mvin 2 rows.
+# Where: src/gemmini.cc:294-298, config_mvin writes one shared acc_type, private_stride,
+#   memory_stride_mvin and scale; mvin_type (rs1[4:3], line 295) is stored but never read.
+#   Missing: one set of these registers per load pipeline.
+# Spec: README.md:411-412 (mvin2 and mvin3 have "their own independent set of configuration
+#   registers") and 467 (config_mvin rs1[4:3] picks the pipeline). RTL LoadController.scala:33-37
+#   (stride, scale, shrink per load state), 61-64 (state from funct or rs1[4:3]), 143-146.
+# Expected: mvin uses stride 16, so scratchpad row 1 col 0 = 0x22 = 34.
+# Old ILA: uses the last stride, 32, so row 1 col 0 = 0x33 = 51.
+config funct=0 rs1=0x3f80000000100001 rs2=0x0000000000000010
+config funct=0 rs1=0x3f80000000100009 rs2=0x0000000000000020
+.mem 0x10000 11
+.mem 0x10010 22
+.mem 0x10020 33
+mvin   funct=2 rs1=0x0000000000010000 rs2=0x0002000100000000

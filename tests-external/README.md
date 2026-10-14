@@ -12,8 +12,10 @@ instruction, and the run stops at the first difference.
 | `src/golden.*` | libgemmini on a Spike processor and MMU, over sparse DRAM |
 | `src/ila_sim.*` | runs the ILA on concrete values (start instruction, then its `*_step`s) |
 | `hosttrace/` | turns a `gemmini-rocc-tests` program into a trace, on the host |
+| `directed/` | hand-written traces, one per known ILA bug, with the expected values and their `# Spec:` source in comments |
 | `gen_random.py` | writes constrained-random traces |
 | `run_programs.sh` | runs both kinds and prints PASS/FAIL per program (called by `../run.sh`) |
+| `../dependencies/gemmini/` | the Gemmini RTL (`8c3f992`, which pins the same rocc-tests and libgemmini), reference only, not built. `# Spec:` paths are relative to it; `RTL X.scala` is `src/main/scala/gemmini/X.scala` |
 
 ## Build
 
@@ -31,10 +33,11 @@ Both models are built with DIM 16, the size libgemmini and the rocc-tests are wr
 ## Run
 
 ```sh
-./run.sh tests-external                                # rocc-tests + 20 random programs
+./run.sh tests-external                                # rocc-tests + directed/ + 20 random programs
 ./run.sh tests-external new                            # same, built against new/src, new/include
 SEEDS=100 OPS=mvin,mvout,config_mvin,config_mvout ./run.sh tests-external
 build/tests-external/gemmini_diff prog.trace           # one program; --log adds libgemmini's log
+build/tests-external/gemmini_diff tests-external/directed/mvin_scale_applied.trace
 tests-external/hosttrace/trace.sh matmul_ws out.trace  # trace one rocc test (x86-64 gcc)
 tests-external/gen_random.py --dim 16 --seed 3 --ops mvin,mvout > out.trace
 ```
@@ -76,7 +79,7 @@ FAIL out.trace:274 (instruction 17)
   counters) can't reach it. The rocc tests in `run_programs.sh` are the ones that don't use them.
 - A host trace records CPU memory only where an mvin reads it, at the time of that mvin.
 - libgemmini is itself a model. If it looks wrong, check the RTL
-  (`generators/gemmini/src/main/scala/gemmini`).
+  (`../dependencies/gemmini/src/main/scala/gemmini`).
 - `ila_sim.cc` converts ILA expressions to Z3 with its own memoized walk.
   `IlaZ3Unroller::GetZ3Expr` takes time exponential in DIM on the compute steps: over
   100 s per instruction at DIM 4.

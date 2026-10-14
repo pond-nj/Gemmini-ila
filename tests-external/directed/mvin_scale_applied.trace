@@ -1,0 +1,14 @@
+# Bug 5: mvin multiplies every element by the config_mvin scale (rs1[63:32], float32).
+# The old ILA stores the scale but never applies it.
+# Scale 2.0 = 0x40000000.
+# Where: src/gemmini.cc:298, config_mvin stores `scale`, but mvin_step (lines 160-161) never
+#   reads it. Missing: multiply each loaded element by the scale.
+# Spec: README.md:469: config_mvin rs1[63:32] is the scale "by which to multiply data as it's
+#   being moved in"; 219: the default config has a float32 scale. RTL Configs.scala:75-111
+#   (mvin_scale_args: x * scale, round to nearest even, saturate to int8), applied at
+#   Scratchpad.scala:407-428.
+# Expected: scratchpad row 0 col 0 = 3 * 2.0 = 6.
+# Old ILA: 3.
+config funct=0 rs1=0x4000000000100001 rs2=0x0000000000000010
+.mem 0x10000 03
+mvin   funct=2 rs1=0x0000000000010000 rs2=0x0001000100000000

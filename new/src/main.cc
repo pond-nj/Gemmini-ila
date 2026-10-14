@@ -41,6 +41,7 @@ int main()
 
     Gemmini gem { Config1, "gem1" };
     Gemmini gem_matmul { Config2, "gem2" }; // 2x2 systolic array for convenience
+    // Atomic model decodes funct 4; the old atomic funct 1 is mvin2 (gemmini/src/main/scala/gemmini/GemminiISA.scala:9)
     Gemmini gem_atomic { Config2, "gem3", Gemmini::ComputeModel::Atomic };
 
     gem.AddInstructions();
@@ -80,6 +81,7 @@ int main()
 
     // Formal verification for atomic and stepped computation versions
     // Not done
+    // ILA timing, not architectural: the stepped compute is 1 start + (3 * DIM - 1) steps
     verifyComputeAtomicVsStepped(Config2, 1, 3 * Config2.DIM);
 
     return 0;

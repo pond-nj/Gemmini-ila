@@ -1,0 +1,16 @@
+# Bug 1: config_mvout takes the DRAM row stride from rs2[31:0]; rs2[63:32] is the scale.
+# The old ILA uses all 64 bits of rs2 as the stride.
+# mvin 2 rows (stride 16) to scratchpad rows 0-1, then mvout them to 0x80000 with stride 16.
+# Where: src/gemmini.cc:316, config_mvout in Gemmini::AddInstructions:
+#   memory_stride_mvout = Extract(rs2, 63, 0); should be Extract(rs2, 31, 0).
+# Spec: RTL GemminiISA.scala:155-160, class ConfigMvoutRs2: acc_scale in rs2[63:32], stride in
+#   rs2[31:0] (the first Bundle field is the MSBs). Decoded at StoreController.scala:98-100 with
+#   stride_bits = 32. The README (line 478) only says "rs2 = the stride in bytes".
+# Expected: DRAM 0x80000 = 0x11 and DRAM 0x80010 = 0x22.
+# Old ILA: row 1 goes to 0x80000 + 0x3f80000000000010, so DRAM 0x80010 stays 0.
+config funct=0 rs1=0x3f80000000100001 rs2=0x0000000000000010
+config funct=0 rs1=0x0000000000000002 rs2=0x3f80000000000010
+.mem 0x10000 11
+.mem 0x10010 22
+mvin   funct=2 rs1=0x0000000000010000 rs2=0x0002000100000000
+mvout  funct=3 rs1=0x0000000000080000 rs2=0x0002000100000000

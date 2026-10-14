@@ -4,7 +4,8 @@
 # time, on
 #   1. the gemmini-rocc-tests programs that only use instructions the ILA can encode
 #      (funct 0-7), traced on the host, and
-#   2. SEEDS constrained-random programs from gen_random.py.
+#   2. the hand-written traces in directed/, one per known ILA bug, and
+#   3. SEEDS constrained-random programs from gen_random.py.
 # Prints one line per program as it finishes; full reports go to <build>/results/<name>.out
 # and per-instruction progress to logs/<name>.log.
 
@@ -34,6 +35,8 @@ write_trace() { # write_trace <name> <trace>
     # random-<seed>: generate a random program; ${1#random-} strips the prefix to get the seed,
     # and --ops is passed only when OPS is non-empty.
     random-*) "$D/gen_random.py" --dim "$DIM" --seed "${1#random-}" ${OPS:+--ops "$OPS"} > "$2" ;;
+    # directed-<name>: copy the hand-written trace directed/<name>.trace.
+    directed-*) cp "$D/directed/${1#directed-}.trace" "$2" ;;
     # Anything else is a gemmini-rocc-tests program: compile it for the host and record its trace.
     *) "$D/hosttrace/trace.sh" "$1" "$2" ;;
   esac
@@ -59,8 +62,10 @@ export -f write_trace run_test
 export D B DIM LOGS
 export OPS=${OPS:-}
 
-# Build the list of programs to run: the rocc-tests, then random-1 .. random-$SEEDS (default 20).
+# Build the list of programs to run: the rocc-tests, the directed traces, then
+# random-1 .. random-$SEEDS (default 20).
 tests=$ROCC_TESTS
+for f in "$D"/directed/*.trace; do tests="$tests directed-$(basename "$f" .trace)"; done
 for s in $(seq 1 "${SEEDS:-20}"); do tests="$tests random-$s"; done
 
 echo "Logging per-instruction progress to $LOGS/<name>.log"

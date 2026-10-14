@@ -1,0 +1,14 @@
+# Bug 3: a shrunk mvin to the accumulator (config_mvin rs1[2] = 1) reads int8 elements
+# and sign-extends each one into its own 32-bit accumulator element.
+# The old ILA packs the int8 row and zero-extends the whole row instead.
+# Where: src/gemmini.cc:180 and 183, mvin_step: store_acc_input = ZExt(new_row_input_concat,
+#   ACC_ROW_BITS) zero-extends the packed row; missing a per-element SExt to ACC_BITS.
+# Spec: README.md:466 (rs1[2] = 1: accumulator mvins are inputType) and 217 ("cast up to
+#   accType"). The cast is a per-element sign-extension: RTL LoadController.scala:108 (shrunk
+#   clears has_acc_bitwidth), Scratchpad.scala:847 (each element .withWidthOf(accType)),
+#   Arithmetic.scala:112-118 (SInt withWidthOf replicates the sign bit).
+# Expected: accumulator row 0 col 0 = -2 (0xfe), col 1 = 3.
+# Old ILA: col 0 = 0x000003fe = 1022, col 1 = 0.
+config funct=0 rs1=0x3f80000000100005 rs2=0x0000000000000010
+.mem 0x10000 fe03
+mvin   funct=2 rs1=0x0000000000010000 rs2=0x0001000280000000
